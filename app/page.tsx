@@ -203,7 +203,7 @@ export default function DesignStudio() {
       onContextMenu={(e) => e.preventDefault()}
     >
       
-      {/* HEADER: Unified Navigation and Global Actions */}
+      {/* HEADER */}
       <header className="h-[65px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50 shadow-sm">
         <div className="flex items-center gap-6">
           <span className="font-black text-[12px] uppercase tracking-[0.2em] text-slate-900 hidden md:block">Studio v2</span>
@@ -237,22 +237,31 @@ export default function DesignStudio() {
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        {/* SOURCE PANEL: Now more compact without the upload button */}
-        <aside className="h-[45%] md:h-full w-full md:w-[380px] p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-col gap-5 shrink-0 overflow-hidden">
-          <div className="flex-1 bg-slate-50 rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center">
-            <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
-              {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
-              {candidates.map(c => (
-                <path key={c.id} d={c.d} fill={c.selected ? activeColor : "transparent"} stroke={c.selected ? "#3b82f6" : "#cbd5e1"} 
-                  strokeWidth={2} opacity={0.5} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />
-              ))}
-              {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={3} fill="#3b82f6" />)}
-            </svg>
-          </div>
+        {/* SOURCE PANEL: Vertically stacked controls on mobile */}
+        <aside className="h-[48%] md:h-full w-full md:w-[380px] p-4 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-4 shrink-0 overflow-hidden">
           
-          <div className="flex flex-col gap-3 shrink-0">
-            <input type="range" min={0.5} max={4} step={0.1} value={sourceZoom} onChange={e => setSourceZoom(parseFloat(e.target.value))} className="w-full accent-slate-900" />
-            <div className="flex gap-3">
+          {/* Vertical Controls for Mobile (Side Column) / Top for Desktop */}
+          <div className="flex flex-col md:flex-col gap-4 shrink-0 w-[60px] md:w-full items-center justify-between md:order-2">
+            
+            {/* Zoom Slider: Vertical on mobile, Horizontal on desktop */}
+            <div className="flex-1 flex items-center justify-center md:w-full h-[150px] md:h-auto">
+                <input 
+                    type="range" 
+                    min={0.5} 
+                    max={4} 
+                    step={0.1} 
+                    value={sourceZoom} 
+                    onChange={e => setSourceZoom(parseFloat(e.target.value))} 
+                    className="accent-slate-900 cursor-pointer md:w-full"
+                    style={{
+                        writingMode: typeof window !== 'undefined' && window.innerWidth < 768 ? 'bt-lr' : 'horizontal-tb',
+                        WebkitAppearance: typeof window !== 'undefined' && window.innerWidth < 768 ? 'slider-vertical' : 'none'
+                    } as any}
+                />
+            </div>
+
+            {/* Action Buttons: Vertical Stack on Mobile */}
+            <div className="flex flex-col md:flex-row gap-3 w-full">
               <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
                 let pts: Dot[] = [];
@@ -268,25 +277,35 @@ export default function DesignStudio() {
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-              }} className="flex-1 bg-white border border-slate-200 text-slate-900 py-4 rounded-2xl text-[10px] font-bold uppercase shadow-sm active:bg-slate-50 transition-colors">Sample</button>
+              }} className="w-full bg-slate-100 text-slate-900 py-3 md:py-4 rounded-xl md:rounded-2xl text-[8px] md:text-[10px] font-black uppercase shadow-sm active:bg-slate-200 transition-colors">
+                Sample
+              </button>
               
               <button onClick={() => {
                 saveForUndo();
                 setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: 0.5, showDots: true }]);
                 setSourceDots([]);
-              }} disabled={sourceDots.length === 0} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl text-[10px] font-bold uppercase disabled:opacity-30 shadow-lg shadow-blue-100">Add Unit</button>
+              }} disabled={sourceDots.length === 0} className="w-full bg-blue-600 text-white py-3 md:py-4 rounded-xl md:rounded-2xl text-[8px] md:text-[10px] font-black uppercase disabled:opacity-30 shadow-lg shadow-blue-100">
+                Add
+              </button>
             </div>
+          </div>
+
+          {/* Image Preview Area */}
+          <div className="flex-1 bg-slate-50 rounded-[1.5rem] md:rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center md:order-1">
+            <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
+              {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
+              {candidates.map(c => (
+                <path key={c.id} d={c.d} fill={c.selected ? activeColor : "transparent"} stroke={c.selected ? "#3b82f6" : "#cbd5e1"} 
+                  strokeWidth={2} opacity={0.5} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />
+              ))}
+              {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={3} fill="#3b82f6" />)}
+            </svg>
           </div>
         </aside>
 
         {/* WORKSPACE */}
         <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-xl relative overflow-hidden min-h-[300px]" 
-          onTouchStart={(e) => {
-            if (e.touches.length === 2 && draggingShapeId) {
-              setInitialPinchDist(getPinchDist(e.touches));
-              setInitialPinchScale(workspaceShapes.find(s => s.id === draggingShapeId)?.scale || 1);
-            }
-          }}
           onPointerDown={(e) => {
             isPointerDownRef.current = true;
             const c = getCoords(e);
@@ -300,11 +319,6 @@ export default function DesignStudio() {
           onPointerMove={(e) => {
             const c = getCoords(e);
             if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
-            if (e.nativeEvent instanceof TouchEvent && (e.nativeEvent as TouchEvent).touches.length === 2 && draggingShapeId && initialPinchDist && initialPinchScale) {
-              const factor = getPinchDist((e.nativeEvent as TouchEvent).touches) / initialPinchDist;
-              setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, scale: Math.max(0.1, initialPinchScale * factor) } : s));
-              return;
-            }
             if (penRef.current && e.pointerId === penRef.current.pointerId) {
                 setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
                 return;
@@ -324,7 +338,6 @@ export default function DesignStudio() {
           onPointerUp={() => { 
             isPointerDownRef.current = false; penRef.current = null;
             setDraggingShapeId(null); setDraggingDot(null); setResizingId(null);
-            setInitialPinchDist(null);
             if (longPressTimer.current) clearTimeout(longPressTimer.current);
           }}>
           <svg ref={workspaceRef} className="w-full h-full">
@@ -347,10 +360,6 @@ export default function DesignStudio() {
                         setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                     }
                   }}
-                  onContextMenu={(e) => { 
-                    e.preventDefault(); e.stopPropagation(); 
-                    setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id }); 
-                  }}
                 />
                 <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} pointerEvents="none" opacity={0.6} />
                 {globalShowDots && shape.dots.map(dot => (
@@ -364,15 +373,6 @@ export default function DesignStudio() {
               </g>
             ))}
           </svg>
-
-          {contextMenu && (
-            <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" 
-                 style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
-              <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100">Bring to Front</button>
-              <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-colors">Delete Unit</button>
-              <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase hover:bg-slate-50 transition-colors">Cancel</button>
-            </div>
-          )}
         </main>
 
         {/* TOOL PANEL */}
