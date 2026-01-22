@@ -129,7 +129,7 @@ export default function DesignStudio() {
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
         {/* SOURCE PANEL - Added touch-none here to prevent accidental scrolls while tapping paths */}
-        <div className="h-[45%] md:h-full md:w-[25%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0 touch-none">
+        <div className="h-[65%] md:h-full md:w-[25%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0 touch-none">
           <div className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full cursor-crosshair">
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
