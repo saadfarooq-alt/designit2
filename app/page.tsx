@@ -245,7 +245,7 @@ export default function DesignStudio() {
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
         {/* SOURCE PANEL */}
-        <aside className="h-[48%] md:h-full w-full md:w-[380px] p-3 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-3 shrink-0 overflow-hidden">
+        <aside className="h-[35%] md:h-full w-full md:w-[380px] p-3 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-3 shrink-0 overflow-hidden">
           
           {/* Use flex-col-reverse on mobile to put buttons at the top visually */}
           <div className="flex flex-col-reverse md:flex-col gap-4 shrink-0 w-[65px] md:w-full items-center md:order-2">
