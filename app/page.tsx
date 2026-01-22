@@ -150,8 +150,8 @@ export default function DesignStudio() {
 
       {/* HEADER */}
       <div className="h-[10%] flex items-center px-10 border-b border-slate-50 shrink-0">
-        <label className="bg-[#FFD600] text-black px-8 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest shadow-[0_4px_0_0_#b89b00] cursor-pointer">
-          Upload
+         <label className="bg-orange-500 text-white px-4 py-2 rounded text-[10px] font-bold uppercase cursor-pointer shadow-sm">
+          Upload Image
           <input type="file" className="hidden" onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) setSelectedImage(URL.createObjectURL(f));
