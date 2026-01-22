@@ -50,7 +50,7 @@ export default function DesignStudio() {
     img.crossOrigin = "anonymous"; 
     img.onload = () => {
       setImgDims({ width: img.width, height: img.height });
-      ImageTracer.imageToSVG(selectedImage, (svgString) => {
+      ImageTracer.imageToSVG(selectedImage, (svgString: string) => {
         const inner = svgString.replace(/<svg[^>]*>/, "").replace(/<\/svg>/, "").replace(/<rect[^>]*\/>/g, ""); 
         setSvgContent(inner);
       }, { numberofcolors: 2, ltres: 1, qtres: 1, scale: 1 });
