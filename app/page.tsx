@@ -52,9 +52,6 @@ export default function DesignStudio() {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   
-  const [initialPinchDist, setInitialPinchDist] = useState<number | null>(null);
-  const [initialPinchScale, setInitialPinchScale] = useState<number | null>(null);
-
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const MAX_HISTORY = 50;
 
@@ -125,7 +122,7 @@ export default function DesignStudio() {
     setCandidates(results);
   }, [svgContent]);
 
-  // 3. Coordinate Helpers
+  // 3. Helpers
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0, rx: 0, ry: 0 };
@@ -134,13 +131,6 @@ export default function DesignStudio() {
     return { x: cx - rect.left, y: cy - rect.top, rx: cx, ry: cy };
   };
 
-  const getPinchDist = (touches: TouchList | React.TouchList) => {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  // 4. Undo Logic
   const saveForUndo = useCallback(() => {
     setHistory(h => {
       const snapshot = { 
@@ -211,65 +201,24 @@ export default function DesignStudio() {
     >
       
       {/* HEADER */}
-      <header className="h-[65px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50 shadow-sm">
-        <div className="flex items-center gap-6">
-          <span className="font-black text-[12px] uppercase tracking-[0.2em] text-slate-900 hidden md:block">Studio v2</span>
-        </div>
-        
+      <header className="h-[60px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50">
+        <span className="font-black text-[12px] uppercase tracking-widest text-slate-900">Studio v2</span>
         <div className="flex items-center gap-3">
           <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
-          <button 
-            onClick={() => fileInputRef.current?.click()} 
-            className="px-5 py-2.5 bg-slate-900 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-          >
-            Upload
-          </button>
-          
-          <div className="w-px h-6 bg-slate-200 mx-1 hidden md:block" />
-
-          <button 
-            onClick={undo} 
-            className="px-5 py-2.5 bg-white border border-slate-200 rounded-2xl text-[10px] font-bold uppercase shadow-sm active:scale-95 transition-all"
-          >
-            Undo
-          </button>
-          
-          <button 
-            onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} 
-            className="px-5 py-2.5 bg-red-500 text-white rounded-2xl text-[10px] font-bold uppercase shadow-lg shadow-red-100 active:scale-95 transition-all"
-          >
-            Reset
-          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-bold uppercase shadow-lg">Upload</button>
+          <button onClick={undo} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold uppercase shadow-sm">Undo</button>
+          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-4 py-2 bg-red-500 text-white rounded-xl text-[10px] font-bold uppercase shadow-lg">Reset</button>
         </div>
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        {/* SOURCE PANEL */}
-        <aside className="h-[49%] md:h-full w-full md:w-[380px] p-3 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-3 shrink-0 overflow-hidden">
+        
+        {/* SOURCE PANEL (38% Mobile Height) */}
+        <aside className="h-[38%] md:h-full w-full md:w-[380px] p-3 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row gap-3 shrink-0 overflow-hidden">
           
-          {/* Use flex-col-reverse on mobile to put buttons at the top visually */}
-          <div className="flex flex-col-reverse md:flex-col gap-4 shrink-0 w-[65px] md:w-full items-center md:order-2">
-            
-            <div className="flex-1 flex items-center justify-center w-full min-h-[100px]">
-                <input 
-                    type="range" 
-                    min={0.5} 
-                    max={4} 
-                    step={0.1} 
-                    value={sourceZoom} 
-                    onChange={e => setSourceZoom(parseFloat(e.target.value))} 
-                    className="accent-slate-900 cursor-pointer"
-                    style={{
-                        writingMode: isMobile ? 'vertical-lr' : 'horizontal-tb',
-                        WebkitAppearance: isMobile ? 'slider-vertical' : 'none',
-                        height: isMobile ? '130px' : 'auto',
-                        width: isMobile ? '12px' : '100%'
-                    } as React.CSSProperties}
-                />
-            </div>
-
-            <div className="flex flex-col md:flex-row gap-2 w-full shrink-0">
-              <button onClick={() => {
+          {/* LEFT CONTROLS FOR SOURCE */}
+          <div className="flex flex-col gap-2 w-[75px] md:w-[100px] shrink-0">
+            <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
                 let pts: Dot[] = [];
                 candidates.filter(c => c.selected).forEach(c => {
@@ -284,138 +233,136 @@ export default function DesignStudio() {
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-              }} className="w-full h-12 md:h-14 bg-slate-100 text-slate-900 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase shadow-sm active:bg-slate-200 transition-colors">
-                Sample
-              </button>
-              
-              <button onClick={() => {
+            }} className="w-full h-12 bg-slate-100 text-slate-900 rounded-xl text-[9px] font-black uppercase">Sample</button>
+            
+            <button onClick={() => {
                 saveForUndo();
                 setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: 0.5, showDots: true }]);
                 setSourceDots([]);
-              }} disabled={sourceDots.length === 0} className="w-full h-12 md:h-14 bg-blue-600 text-white rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase disabled:opacity-30 shadow-lg shadow-blue-100">
-                {isMobile ? "Add" : "Add Unit"}
-              </button>
+            }} disabled={sourceDots.length === 0} className="w-full h-12 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase disabled:opacity-30 shadow-md">Add</button>
+            
+            <div className="mt-auto bg-slate-50 p-2 rounded-xl flex flex-col items-center gap-1">
+                <span className="text-[8px] font-black text-slate-400">ZOOM</span>
+                <input type="range" min={0.5} max={4} step={0.1} value={sourceZoom} onChange={e => setSourceZoom(parseFloat(e.target.value))} className="w-full accent-slate-900" />
             </div>
           </div>
 
-          <div className="flex-1 bg-slate-50 rounded-[1.5rem] md:rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center md:order-1">
-            <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
+          <div className="flex-1 min-h-0 bg-slate-50 rounded-[1.5rem] border border-slate-200 relative overflow-hidden flex items-center justify-center shadow-inner">
+            <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full max-h-full" style={{ transform: `scale(${sourceZoom})` }}>
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
               {candidates.map(c => (
                 <path key={c.id} d={c.d} fill={c.selected ? activeColor : "transparent"} stroke={c.selected ? "#3b82f6" : "#cbd5e1"} 
                   strokeWidth={2} opacity={0.5} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />
               ))}
-              {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={3} fill="#3b82f6" />)}
+              {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={5} fill="#3b82f6" />)}
             </svg>
           </div>
         </aside>
 
-        {/* WORKSPACE */}
-        <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-xl relative overflow-hidden min-h-[300px]" 
-          onPointerDown={(e) => {
-            isPointerDownRef.current = true;
-            const c = getCoords(e);
-            if (activeTool === "pen") {
-                saveForUndo();
-                const strokeId = `st-${Date.now()}`;
-                setStrokes(prev => [...prev, { id: strokeId, points: [{ x: c.x, y: c.y }], color: activeColor, width: 4 }]);
-                penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId };
-            }
-          }}
-          onPointerMove={(e) => {
-            const c = getCoords(e);
-            if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
-            if (penRef.current && e.pointerId === penRef.current.pointerId) {
-                setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
-                return;
-            }
-            if (draggingDot) {
-              setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { 
-                ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) 
-              }));
-            } else if (draggingShapeId) {
-              setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
-            } else if (resizingId) {
-               const dx = c.rx - dragOffset.x;
-               setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + dx / 400) } : s));
-               setDragOffset({ x: c.rx, y: c.ry });
-            }
-          }} 
-          onPointerUp={() => { 
-            isPointerDownRef.current = false; penRef.current = null;
-            setDraggingShapeId(null); setDraggingDot(null); setResizingId(null);
-            if (longPressTimer.current) clearTimeout(longPressTimer.current);
-          }}>
-          <svg ref={workspaceRef} className="w-full h-full">
-            {strokes.map(s => (
-                <path key={s.id} d={strokePointsToPath(s.points)} fill="none" stroke={s.color} strokeWidth={s.width} strokeLinecap="round" strokeLinejoin="round" />
-            ))}
-            {workspaceShapes.map(shape => (
-              <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`}>
-                <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots)} /></clipPath></defs>
-                <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`}
-                  className="touch-none"
-                  onPointerDown={(e) => {
-                    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-                    longPressTimer.current = setTimeout(() => {
-                      setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
-                    }, 2300);
-                    if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
-                    if (activeTool === "cursor") {
-                        e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id);
-                        setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
-                    }
-                  }}
-                />
-                <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} pointerEvents="none" opacity={0.6} />
-                {globalShowDots && shape.dots.map(dot => (
-                  <circle key={dot.id} cx={dot.x} cy={dot.y} r={4.5 / shape.scale} fill="#3b82f6" 
-                    onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); } }} />
-                ))}
-                {globalShowDots && (
-                  <rect x={shape.dims.width - 10} y={shape.dims.height - 10} width={20 / shape.scale} height={20 / shape.scale} fill="#f97316" rx={4}
-                    onPointerDown={(e) => { e.stopPropagation(); saveForUndo(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
-                )}
-              </g>
-            ))}
-          </svg>
-
-          {contextMenu && (
-            <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" 
-                 style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
-              <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100">Bring to Front</button>
-              <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-colors">Delete Unit</button>
-              <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase hover:bg-slate-50 transition-colors">Cancel</button>
+        {/* WORKSPACE AREA + TOOLS ON LEFT */}
+        <div className="flex-1 flex flex-row gap-3 min-h-0">
+          
+          <aside className="w-[65px] md:w-[85px] h-full bg-white rounded-[2rem] border border-white shadow-xl flex flex-col items-center py-6 gap-6 shrink-0">
+            <div className="flex flex-col gap-3 p-2 bg-slate-50 rounded-[1.5rem] shadow-inner">
+              {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
+                <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl transition-all ${activeTool === tool ? 'bg-white shadow-md text-blue-600 scale-110' : 'text-slate-400'}`}>
+                  <span className="text-[12px] font-black uppercase">{tool.charAt(0)}</span>
+                </button>
+              ))}
             </div>
-          )}
-        </main>
-
-        {/* TOOL PANEL */}
-        <aside className="w-full md:w-[100px] h-[80px] md:h-full bg-white rounded-[2.5rem] border border-white shadow-xl flex md:flex-col flex-row items-center md:py-8 px-4 md:px-0 gap-6 shrink-0">
-          <div className="flex md:flex-col flex-row gap-3 p-2 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
-            {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
-              <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-[1.25rem] transition-all duration-300 ${activeTool === tool ? 'bg-white shadow-md text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-900'}`}>
-                <span className="text-[12px] md:text-[16px] font-black uppercase">{tool.charAt(0)}</span>
-              </button>
-            ))}
-          </div>
-          <div className="flex-1 flex md:flex-col flex-row items-center justify-center gap-6">
-            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 md:w-12 md:h-12 rounded-full border-4 border-white cursor-pointer shadow-lg transition-transform" />
-            <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-2xl text-[8px] md:text-[10px] font-black uppercase transition-all ${globalShowDots ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
+            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 rounded-full border-4 border-white shadow-lg cursor-pointer" />
+            <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`w-11 h-11 flex items-center justify-center rounded-xl text-[9px] font-black uppercase ${globalShowDots ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
               {globalShowDots ? "ON" : "OFF"}
             </button>
-          </div>
-        </aside>
+          </aside>
+
+          <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-xl relative overflow-hidden" 
+            onPointerDown={(e) => {
+              isPointerDownRef.current = true;
+              const c = getCoords(e);
+              if (activeTool === "pen") {
+                  saveForUndo();
+                  const strokeId = `st-${Date.now()}`;
+                  setStrokes(prev => [...prev, { id: strokeId, points: [{ x: c.x, y: c.y }], color: activeColor, width: 4 }]);
+                  penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId };
+              }
+            }}
+            onPointerMove={(e) => {
+              const c = getCoords(e);
+              if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
+              if (penRef.current && e.pointerId === penRef.current.pointerId) {
+                  setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
+                  return;
+              }
+              if (draggingDot) {
+                setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { 
+                  ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) 
+                }));
+              } else if (draggingShapeId) {
+                setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
+              } else if (resizingId) {
+                 const dx = c.rx - dragOffset.x;
+                 setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + dx / 400) } : s));
+                 setDragOffset({ x: c.rx, y: c.ry });
+              }
+            }} 
+            onPointerUp={() => { 
+              isPointerDownRef.current = false; penRef.current = null;
+              setDraggingShapeId(null); setDraggingDot(null); setResizingId(null);
+              if (longPressTimer.current) clearTimeout(longPressTimer.current);
+            }}>
+            <svg ref={workspaceRef} className="w-full h-full">
+              {strokes.map(s => (
+                  <path key={s.id} d={strokePointsToPath(s.points)} fill="none" stroke={s.color} strokeWidth={s.width} strokeLinecap="round" strokeLinejoin="round" />
+              ))}
+              {workspaceShapes.map(shape => (
+                <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`}>
+                  <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots)} /></clipPath></defs>
+                  <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`}
+                    className="touch-none"
+                    onPointerDown={(e) => {
+                      if (longPressTimer.current) clearTimeout(longPressTimer.current);
+                      longPressTimer.current = setTimeout(() => {
+                        setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
+                      }, 2300); // 2.3 seconds
+                      if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
+                      if (activeTool === "cursor") {
+                          e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id);
+                          setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                      }
+                    }}
+                  />
+                  <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} pointerEvents="none" opacity={0.6} />
+                  {globalShowDots && shape.dots.map(dot => (
+                    <circle key={dot.id} cx={dot.x} cy={dot.y} r={6 / shape.scale} fill="#3b82f6" 
+                      onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); } }} />
+                  ))}
+                  {globalShowDots && (
+                    <rect x={shape.dims.width - 10} y={shape.dims.height - 10} width={25 / shape.scale} height={25 / shape.scale} fill="#f97316" rx={6}
+                      onPointerDown={(e) => { e.stopPropagation(); saveForUndo(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
+                  )}
+                </g>
+              ))}
+            </svg>
+
+            {contextMenu && (
+              <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px]" 
+                   style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
+                <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase border-b border-slate-100">Bring to Front</button>
+                <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500">Delete Unit</button>
+                <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase">Cancel</button>
+              </div>
+            )}
+          </main>
+        </div>
       </div>
 
-      {/* FOOTER */}
-      <footer className="h-[110px] px-3 pb-3 shrink-0">
-        <div className="h-full bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white shadow-md flex items-center px-10">
-          <div className="flex-1 flex gap-6 overflow-x-auto py-2 no-scrollbar items-center">
+      {/* FOOTER GALLERY */}
+      <footer className="h-[100px] px-3 pb-3 shrink-0">
+        <div className="h-full bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
             {templates.map((url, i) => (
-              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-16 w-16 rounded-2xl object-cover cursor-pointer border-4 transition-all ${selectedImage === url ? 'border-blue-500 scale-110 shadow-xl' : 'border-white opacity-40'}`} />
+              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-4 transition-all ${selectedImage === url ? 'border-blue-500 scale-105' : 'border-white opacity-50'}`} />
             ))}
-          </div>
         </div>
       </footer>
     </div>
