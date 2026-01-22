@@ -28,7 +28,7 @@ export default function DesignStudio() {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Tracing & Source State ---
+  // --- State ---
   const [templates, setTemplates] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [svgContent, setSvgContent] = useState<string | null>(null);
@@ -38,23 +38,18 @@ export default function DesignStudio() {
   const [sourceZoom, setSourceZoom] = useState(1);
   const [isMobile, setIsMobile] = useState(false);
 
-  // --- Workspace & Tool State ---
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
   const [activeColor, setActiveColor] = useState("#f97316");
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
 
-  // --- Interaction State ---
   const [draggingDot, setDraggingDot] = useState<{ shapeId: string; dotId: string } | null>(null);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   
-  const [initialPinchDist, setInitialPinchDist] = useState<number | null>(null);
-  const [initialPinchScale, setInitialPinchScale] = useState<number | null>(null);
-
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const MAX_HISTORY = 50;
 
@@ -71,7 +66,6 @@ export default function DesignStudio() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 1. Load Templates
   useEffect(() => {
     async function load() {
       try {
@@ -90,7 +84,6 @@ export default function DesignStudio() {
     load();
   }, []);
 
-  // 2. Tracing Logic
   const runTrace = useCallback(() => {
     if (!selectedImage) return;
     const img = new Image();
@@ -125,7 +118,6 @@ export default function DesignStudio() {
     setCandidates(results);
   }, [svgContent]);
 
-  // 3. Coordinate Helpers
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0, rx: 0, ry: 0 };
@@ -134,13 +126,6 @@ export default function DesignStudio() {
     return { x: cx - rect.left, y: cy - rect.top, rx: cx, ry: cy };
   };
 
-  const getPinchDist = (touches: TouchList | React.TouchList) => {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-  };
-
-  // 4. Undo Logic
   const saveForUndo = useCallback(() => {
     setHistory(h => {
       const snapshot = { 
@@ -209,64 +194,26 @@ export default function DesignStudio() {
       onClick={() => setContextMenu(null)}
       onContextMenu={(e) => e.preventDefault()}
     >
-      
       {/* HEADER */}
       <header className="h-[65px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50 shadow-sm">
-        <div className="flex items-center gap-6">
-          <span className="font-black text-[12px] uppercase tracking-[0.2em] text-slate-900 hidden md:block">Studio v2</span>
-        </div>
-        
+        <span className="font-black text-[12px] uppercase tracking-[0.2em] text-slate-900">Studio v2</span>
         <div className="flex items-center gap-3">
           <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
-          <button 
-            onClick={() => fileInputRef.current?.click()} 
-            className="px-5 py-2.5 bg-slate-900 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all"
-          >
-            Upload
-          </button>
-          
-          <div className="w-px h-6 bg-slate-200 mx-1 hidden md:block" />
-
-          <button 
-            onClick={undo} 
-            className="px-5 py-2.5 bg-white border border-slate-200 rounded-2xl text-[10px] font-bold uppercase shadow-sm active:scale-95 transition-all"
-          >
-            Undo
-          </button>
-          
-          <button 
-            onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} 
-            className="px-5 py-2.5 bg-red-500 text-white rounded-2xl text-[10px] font-bold uppercase shadow-lg shadow-red-100 active:scale-95 transition-all"
-          >
-            Reset
-          </button>
+          <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-bold uppercase">Upload</button>
+          <button onClick={undo} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold uppercase">Undo</button>
+          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-4 py-2 bg-red-500 text-white rounded-xl text-[10px] font-bold uppercase">Reset</button>
         </div>
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
+        
         {/* SOURCE PANEL */}
-        <aside className="h-[48%] md:h-full w-full md:w-[380px] p-3 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-3 shrink-0 overflow-hidden">
+        <aside className="min-h-[380px] md:h-full w-full md:w-[380px] p-3 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-3 shrink-0">
           
-          <div className="flex flex-col gap-4 shrink-0 w-[65px] md:w-full items-center md:order-2">
+          {/* Vertical Control Column - Buttons at TOP, Zoom at BOTTOM */}
+          <div className="flex flex-col gap-3 shrink-0 w-[75px] md:w-full items-center md:order-2">
             
-            <div className="flex-1 flex items-center justify-center w-full min-h-[100px]">
-                <input 
-                    type="range" 
-                    min={0.5} 
-                    max={4} 
-                    step={0.1} 
-                    value={sourceZoom} 
-                    onChange={e => setSourceZoom(parseFloat(e.target.value))} 
-                    className="accent-slate-900 cursor-pointer"
-                    style={{
-                        writingMode: isMobile ? 'vertical-lr' : 'horizontal-tb',
-                        WebkitAppearance: isMobile ? 'slider-vertical' : 'none',
-                        height: isMobile ? '130px' : 'auto',
-                        width: isMobile ? '12px' : '100%'
-                    } as React.CSSProperties}
-                />
-            </div>
-
+            {/* Buttons (Top for Mobile) */}
             <div className="flex flex-col md:flex-row gap-2 w-full shrink-0">
               <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
@@ -283,20 +230,41 @@ export default function DesignStudio() {
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-              }} className="w-full h-12 md:h-14 bg-slate-100 text-slate-900 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase shadow-sm active:bg-slate-200 transition-colors">
+              }} className="w-full h-14 bg-slate-100 text-slate-900 rounded-2xl text-[10px] font-black uppercase shadow-sm">
                 Sample
               </button>
               
-              <button onClick={() => {
-                saveForUndo();
-                setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: 0.5, showDots: true }]);
-                setSourceDots([]);
-              }} disabled={sourceDots.length === 0} className="w-full h-12 md:h-14 bg-blue-600 text-white rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase disabled:opacity-30 shadow-lg shadow-blue-100">
+              <button 
+                onClick={() => {
+                    saveForUndo();
+                    setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: 0.5, showDots: true }]);
+                    setSourceDots([]);
+                }} 
+                disabled={sourceDots.length === 0} 
+                className="w-full h-14 bg-blue-600 text-white rounded-2xl text-[10px] font-black uppercase disabled:opacity-30 shadow-lg shadow-blue-50"
+              >
                 {isMobile ? "Add" : "Add Unit"}
               </button>
             </div>
+
+            {/* Zoom Slider (Bottom for Mobile) */}
+            <div className="flex-1 flex items-center justify-center w-full min-h-[120px] bg-slate-50/50 rounded-3xl py-4 border border-slate-100">
+                <input 
+                    type="range" min={0.5} max={4} step={0.1} 
+                    value={sourceZoom} 
+                    onChange={e => setSourceZoom(parseFloat(e.target.value))} 
+                    className="accent-slate-900 cursor-pointer"
+                    style={{
+                        writingMode: isMobile ? 'vertical-lr' : 'horizontal-tb',
+                        WebkitAppearance: isMobile ? 'slider-vertical' : 'none',
+                        height: isMobile ? '140px' : 'auto',
+                        width: isMobile ? '12px' : '100%'
+                    } as React.CSSProperties}
+                />
+            </div>
           </div>
 
+          {/* Image Preview Area */}
           <div className="flex-1 bg-slate-50 rounded-[1.5rem] md:rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center md:order-1">
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
@@ -382,9 +350,9 @@ export default function DesignStudio() {
           {contextMenu && (
             <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" 
                  style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
-              <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100">Bring to Front</button>
-              <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-colors">Delete Unit</button>
-              <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 border-b border-slate-100">Bring to Front</button>
+              <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50">Delete Unit</button>
+              <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase hover:bg-slate-50">Cancel</button>
             </div>
           )}
         </main>
@@ -399,7 +367,7 @@ export default function DesignStudio() {
             ))}
           </div>
           <div className="flex-1 flex md:flex-col flex-row items-center justify-center gap-6">
-            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 md:w-12 md:h-12 rounded-full border-4 border-white cursor-pointer shadow-lg transition-transform" />
+            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 md:w-12 md:h-12 rounded-full border-4 border-white cursor-pointer shadow-lg" />
             <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-2xl text-[8px] md:text-[10px] font-black uppercase transition-all ${globalShowDots ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
               {globalShowDots ? "ON" : "OFF"}
             </button>
