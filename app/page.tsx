@@ -5,13 +5,9 @@ import ImageTracer from 'imagetracerjs';
 
 interface Dot { id: string; x: number; y: number; color: string; r: number; }
 interface ExtractedShape { 
-  id: string; 
-  img: string; 
-  dots: Dot[]; 
-  pathData: string; 
+  id: string; img: string; dots: Dot[]; pathData: string; 
   dims: { width: number; height: number };
-  position: { x: number; y: number }; 
-  scale: number; 
+  position: { x: number; y: number }; scale: number; 
 }
 
 export default function DesignStudio() {
@@ -23,8 +19,10 @@ export default function DesignStudio() {
   const [workspaceShapes, setWorkspaceShapes] = useState<ExtractedShape[]>([]);
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   
+  // Interaction & Context Menu State
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [menu, setMenu] = useState<{ x: number, y: number, id: string } | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -53,14 +51,13 @@ export default function DesignStudio() {
   useEffect(() => { if (selectedImage) runTrace(); }, [selectedImage, runTrace]);
 
   // BRING TO FRONT LOGIC
-  const bringToFront = (id: string | null) => {
-    if (!id) return;
+  const bringToFront = (id: string) => {
     setWorkspaceShapes(prev => {
       const item = prev.find(s => s.id === id);
       if (!item) return prev;
-      const rest = prev.filter(s => s.id !== id);
-      return [...rest, item]; // Puts selected item at the end of the array (top layer)
+      return [...prev.filter(s => s.id !== id), item];
     });
+    setMenu(null);
   };
 
   const handleSourceClick = (e: React.MouseEvent) => {
@@ -81,16 +78,10 @@ export default function DesignStudio() {
   const moveAllToWorkspace = () => {
     if (!selectedImage || !activePath) return;
     setWorkspaceShapes(prev => [...prev, {
-      id: `s-${Date.now()}`,
-      img: selectedImage,
-      dots: sourceDots,
-      pathData: activePath,
-      dims: { ...imgDims },
-      position: { x: 0, y: 0 },
-      scale: 1
+      id: `s-${Date.now()}`, img: selectedImage, dots: sourceDots, pathData: activePath,
+      dims: { ...imgDims }, position: { x: 0, y: 0 }, scale: 1
     }]);
-    setSourceDots([]);
-    setActivePath(null);
+    setSourceDots([]); setActivePath(null);
   };
 
   const handleWheel = (e: React.WheelEvent, id: string) => {
@@ -111,27 +102,32 @@ export default function DesignStudio() {
     setDragStart({ x: e.clientX, y: e.clientY });
   };
 
+  const handleContextMenu = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, id });
+  };
+
   return (
-    <div className="flex flex-col h-screen w-full bg-white overflow-hidden text-slate-800 font-sans select-none" onMouseMove={onMouseMove} onMouseUp={() => setDraggingId(null)}>
+    <div className="flex flex-col h-screen w-full bg-white overflow-hidden text-slate-800 font-sans select-none" 
+         onMouseMove={onMouseMove} 
+         onMouseUp={() => setDraggingId(null)}
+         onClick={() => setMenu(null)}>
       
+      {/* HEADER */}
       <div className="h-[10%] flex items-center px-10 border-b border-slate-50 shrink-0">
-        <label className="bg-[#FFD600] text-black px-10 py-4 rounded-xl text-[12px] font-black uppercase tracking-widest shadow-[0_6px_0_0_#b89b00] cursor-pointer active:translate-y-1">
-          Upload
+        <label className="bg-[#FFD600] text-black px-10 py-4 rounded-xl text-[12px] font-black uppercase tracking-widest shadow-[0_6px_0_0_#b89b00] cursor-pointer">
+          Upload Design
           <input type="file" className="hidden" onChange={(e) => {
              const f = e.target.files?.[0];
              if (f) setSelectedImage(URL.createObjectURL(f));
           }} />
         </label>
-        <p className="ml-8 text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-          Tip: Double-click an object to bring it to front
-        </p>
       </div>
 
-      <div className="h-[60%] flex items-center justify-center p-8 bg-[#FBFBFD]">
+      <div className="h-[60%] flex items-center justify-center p-8 bg-[#FBFBFD] relative">
         <div className="flex flex-col gap-3 pr-6">
           <button onClick={moveAllToWorkspace} className="bg-orange-500 text-white px-4 py-2 rounded text-[10px] font-bold uppercase shadow-sm active:scale-95">Bulk Move</button>
-          <button onClick={() => bringToFront(draggingId || workspaceShapes[workspaceShapes.length - 1]?.id)} className="bg-orange-500 text-white px-4 py-2 rounded text-[10px] font-bold uppercase shadow-sm active:scale-95">Bring Front</button>
-          <button onClick={() => setWorkspaceShapes([])} className="bg-orange-500 text-white px-4 py-2 rounded text-[10px] font-bold uppercase shadow-sm active:scale-95">Clear Workspace</button>
+          <button onClick={() => setWorkspaceShapes([])} className="bg-orange-500 text-white px-4 py-2 rounded text-[10px] font-bold uppercase shadow-sm active:scale-95">Clear All</button>
         </div>
 
         <div className="flex flex-row gap-10 h-full">
@@ -158,11 +154,8 @@ export default function DesignStudio() {
                 {workspaceShapes.map(shape => (
                   <g 
                     key={shape.id}
-                    onMouseDown={(e) => { 
-                      setDraggingId(shape.id); 
-                      setDragStart({ x: e.clientX, y: e.clientY }); 
-                    }}
-                    onDoubleClick={() => bringToFront(shape.id)}
+                    onMouseDown={(e) => { setDraggingId(shape.id); setDragStart({ x: e.clientX, y: e.clientY }); }}
+                    onContextMenu={(e) => handleContextMenu(e, shape.id)}
                     onWheel={(e) => handleWheel(e, shape.id)}
                     className="cursor-grab active:cursor-grabbing"
                     style={{ 
@@ -179,9 +172,25 @@ export default function DesignStudio() {
              </svg>
           </div>
         </div>
+
+        {/* CUSTOM RIGHT-CLICK MENU */}
+        {menu && (
+          <div 
+            className="fixed z-[100] bg-white border border-slate-200 shadow-2xl rounded-lg overflow-hidden py-1"
+            style={{ left: menu.x, top: menu.y }}
+          >
+            <button 
+              onClick={() => bringToFront(menu.id)}
+              className="w-full px-4 py-2 text-[10px] font-bold uppercase text-orange-600 hover:bg-orange-50 transition-colors text-left"
+            >
+              Bring to Front
+            </button>
+          </div>
+        )}
       </div>
 
-      <div className="h-[30%] flex items-center px-12 border-t border-slate-50 bg-white overflow-hidden">
+      {/* GALLERY */}
+      <div className="h-[30%] flex items-center px-12 border-t border-slate-50 bg-white">
         <div className="flex gap-8 overflow-x-auto pb-4 no-scrollbar">
           {templates.map((url, i) => (
             <button key={i} onClick={() => setSelectedImage(url)} className={`flex-shrink-0 w-[80px] h-[80px] rounded-2xl border-2 transition-all ${selectedImage === url ? 'scale-110 border-[#FFD600] shadow-lg' : 'opacity-30 border-transparent hover:opacity-100'}`}>
@@ -190,6 +199,10 @@ export default function DesignStudio() {
           ))}
         </div>
       </div>
+
+      <style jsx global>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+      `}</style>
     </div>
   );
 }
