@@ -60,6 +60,7 @@ export default function DesignStudio() {
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -117,7 +118,7 @@ export default function DesignStudio() {
     setCandidates(results);
   }, [svgContent]);
 
-  // 3. Coordinate Helpers
+  // 3. Coordinate Helpers - Fixed Types
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0, rx: 0, ry: 0 };
@@ -126,7 +127,7 @@ export default function DesignStudio() {
     return { x: cx - rect.left, y: cy - rect.top, rx: cx, ry: cy };
   };
 
-  const getPinchDist = (touches: TouchList) => {
+  const getPinchDist = (touches: TouchList | React.TouchList) => {
     const dx = touches[0].clientX - touches[1].clientX;
     const dy = touches[0].clientY - touches[1].clientY;
     return Math.sqrt(dx * dx + dy * dy);
@@ -153,7 +154,6 @@ export default function DesignStudio() {
     setHistory(next);
   };
 
-  // 5. Layer Manipulation
   const bringToFront = (id: string) => {
     saveForUndo();
     setWorkspaceShapes(prev => {
@@ -198,7 +198,10 @@ export default function DesignStudio() {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-slate-200 overflow-hidden select-none touch-none" onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-200 overflow-hidden select-none touch-none" 
+      onClick={() => setContextMenu(null)}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       
       {/* HEADER */}
       <header className="h-[65px] flex items-center justify-between px-6 bg-white/80 backdrop-blur-md border-b shrink-0 z-50 shadow-sm">
@@ -211,16 +214,13 @@ export default function DesignStudio() {
         </div>
       </header>
 
-      {/* Main Container: Vertically stacked on mobile, row on desktop */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        
-        {/* LEFT/TOP PANEL: UPLOAD & TRACING */}
+        {/* SOURCE PANEL */}
         <aside className="h-[40%] md:h-full w-full md:w-[380px] p-6 bg-white rounded-[2.5rem] border border-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col gap-5 shrink-0 overflow-hidden">
           <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
           <button onClick={() => fileInputRef.current?.click()} className="w-full bg-slate-900 text-white py-4 rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-xl active:scale-95 transition-all shrink-0">
             Upload Image
           </button>
-
           <div className="flex-1 bg-slate-50 rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center">
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
@@ -231,7 +231,6 @@ export default function DesignStudio() {
               {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={3} fill="#3b82f6" />)}
             </svg>
           </div>
-          
           <div className="flex flex-col gap-3 shrink-0">
             <input type="range" min={0.5} max={4} step={0.1} value={sourceZoom} onChange={e => setSourceZoom(parseFloat(e.target.value))} className="w-full accent-slate-900" />
             <div className="flex gap-3">
@@ -260,7 +259,7 @@ export default function DesignStudio() {
           </div>
         </aside>
 
-        {/* MAIN WORKSPACE: Fills remaining height on mobile */}
+        {/* WORKSPACE */}
         <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] relative overflow-hidden min-h-[300px]" 
           onTouchStart={(e) => {
             if (e.touches.length === 2 && draggingShapeId) {
@@ -281,18 +280,15 @@ export default function DesignStudio() {
           onPointerMove={(e) => {
             const c = getCoords(e);
             if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
-            
             if (e.nativeEvent instanceof TouchEvent && (e.nativeEvent as TouchEvent).touches.length === 2 && draggingShapeId && initialPinchDist && initialPinchScale) {
               const factor = getPinchDist((e.nativeEvent as TouchEvent).touches) / initialPinchDist;
               setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, scale: Math.max(0.1, initialPinchScale * factor) } : s));
               return;
             }
-
             if (penRef.current && e.pointerId === penRef.current.pointerId) {
                 setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
                 return;
             }
-
             if (draggingDot) {
               setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { 
                 ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) 
@@ -309,6 +305,7 @@ export default function DesignStudio() {
             isPointerDownRef.current = false; penRef.current = null;
             setDraggingShapeId(null); setDraggingDot(null); setResizingId(null);
             setInitialPinchDist(null);
+            if (longPressTimer.current) clearTimeout(longPressTimer.current);
           }}>
           <svg ref={workspaceRef} className="w-full h-full">
             {strokes.map(s => (
@@ -318,14 +315,23 @@ export default function DesignStudio() {
               <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`}>
                 <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots)} /></clipPath></defs>
                 <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`}
+                  className="touch-none"
                   onPointerDown={(e) => {
+                    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+                    longPressTimer.current = setTimeout(() => {
+                      setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
+                    }, 600);
                     if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
                     if (activeTool === "cursor") {
                         e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id);
                         setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                     }
                   }}
-                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id }); }}
+                  onContextMenu={(e) => { 
+                    e.preventDefault(); 
+                    e.stopPropagation(); 
+                    setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id }); 
+                  }}
                 />
                 <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} pointerEvents="none" opacity={0.6} />
                 {globalShowDots && shape.dots.map(dot => (
@@ -341,47 +347,39 @@ export default function DesignStudio() {
           </svg>
 
           {contextMenu && (
-            <div className="fixed bg-white border border-slate-200 shadow-[0_10px_40px_rgba(0,0,0,0.1)] rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" style={{ left: contextMenu.x, top: contextMenu.y }}>
-              <button onClick={() => bringToFront(contextMenu.id)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100">Bring to Front</button>
-              <button onClick={() => { saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-colors">Delete Unit</button>
+            <div className="fixed bg-white border border-slate-200 shadow-[0_10px_40px_rgba(0,0,0,0.2)] rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" 
+                 style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
+              <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100">Bring to Front</button>
+              <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-colors">Delete Unit</button>
               <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase hover:bg-slate-50 transition-colors">Cancel</button>
             </div>
           )}
         </main>
 
-        {/* RIGHT PANEL: TOOLS - Fixed width on desktop, potentially adaptable on mobile */}
+        {/* TOOL PANEL */}
         <aside className="w-full md:w-[100px] h-[80px] md:h-full bg-white rounded-[2.5rem] border border-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex md:flex-col flex-row items-center md:py-8 px-4 md:px-0 gap-6 shrink-0">
           <div className="flex md:flex-col flex-row gap-3 p-2 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
             {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
-              <div key={tool} className="group relative flex items-center">
-                <button 
-                  onClick={() => setActiveTool(tool)} 
-                  className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-[1.25rem] transition-all duration-300 ${activeTool === tool ? 'bg-white shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-900'}`}
-                >
-                  <span className="text-[12px] md:text-[16px] font-black uppercase">{tool.charAt(0)}</span>
-                </button>
-              </div>
+              <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-[1.25rem] transition-all duration-300 ${activeTool === tool ? 'bg-white shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-900'}`}>
+                <span className="text-[12px] md:text-[16px] font-black uppercase">{tool.charAt(0)}</span>
+              </button>
             ))}
           </div>
-
           <div className="flex-1 flex md:flex-col flex-row items-center justify-center gap-6">
-            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 md:w-12 md:h-12 rounded-full border-4 border-white cursor-pointer shadow-lg active:scale-90 transition-transform" />
-            <button 
-              onClick={() => setGlobalShowDots(!globalShowDots)} 
-              className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-2xl text-[8px] md:text-[10px] font-black uppercase transition-all ${globalShowDots ? 'bg-slate-900 text-white shadow-xl' : 'bg-slate-100 text-slate-400'}`}
-            >
+            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 md:w-12 md:h-12 rounded-full border-4 border-white cursor-pointer shadow-lg transition-transform" />
+            <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-2xl text-[8px] md:text-[10px] font-black uppercase transition-all ${globalShowDots ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
               {globalShowDots ? "ON" : "OFF"}
             </button>
           </div>
         </aside>
       </div>
 
-      {/* FOOTER: TEMPLATES */}
+      {/* FOOTER */}
       <footer className="h-[110px] px-3 pb-3 shrink-0">
         <div className="h-full bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white shadow-[0_10px_40px_rgba(0,0,0,0.05)] flex items-center px-10">
           <div className="flex-1 flex gap-6 overflow-x-auto py-2 no-scrollbar items-center">
             {templates.map((url, i) => (
-              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-16 w-16 rounded-2xl object-cover cursor-pointer border-4 transition-all ${selectedImage === url ? 'border-blue-500 scale-110 shadow-xl' : 'border-white opacity-40 hover:opacity-100 shadow-md'}`} />
+              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-16 w-16 rounded-2xl object-cover cursor-pointer border-4 transition-all ${selectedImage === url ? 'border-blue-500 scale-110 shadow-xl' : 'border-white opacity-40 shadow-md'}`} />
             ))}
           </div>
         </div>
