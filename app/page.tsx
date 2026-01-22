@@ -11,7 +11,7 @@ interface DistortableShape {
   dims: { width: number; height: number };
   position: { x: number; y: number }; 
   scale: number;
-  showDots: boolean; // Added to control visibility without losing data
+  showDots: boolean; 
 }
 
 export default function DesignStudio() {
@@ -65,7 +65,6 @@ export default function DesignStudio() {
     return `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(' ') + " Z";
   };
 
-  // Toggles visibility instead of deleting data
   const toggleDotsForShape = (id: string) => {
     setWorkspaceShapes(prev => prev.map(s => s.id === id ? { ...s, showDots: !s.showDots } : s));
     setMenu(null);
@@ -78,7 +77,6 @@ export default function DesignStudio() {
   const handleSourceClick = (e: React.MouseEvent) => {
     const target = e.target as SVGPathElement;
     if (target?.tagName.toLowerCase() === 'path') {
-      const d = target.getAttribute('d') || '';
       const len = target.getTotalLength();
       const pts: Dot[] = [];
       for (let i = 0; i <= len; i += 12) {
@@ -114,7 +112,7 @@ export default function DesignStudio() {
     if (resizingId) {
       const dx = e.clientX - dragOffset.x;
       setWorkspaceShapes(prev => prev.map(s => 
-        s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (dx / 500)) } : s
+        s.id === resizingId ? { ...s, scale: Math.max(0.05, s.scale + (dx / 80)) } : s
       ));
       setDragOffset({ x: e.clientX, y: e.clientY });
       return;
@@ -145,6 +143,12 @@ export default function DesignStudio() {
          onMouseUp={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}
          onClick={() => setMenu(null)}>
       
+      {/* 2: UNDER CONSTRUCTION BANNER */}
+      <div className="w-full bg-orange-500 text-white text-[10px] font-black uppercase py-2 text-center tracking-[0.2em] shadow-inner">
+        🚧 Site Under Construction — We are currently updating the workspace 🚧
+      </div>
+
+      {/* HEADER */}
       <div className="h-[10%] flex items-center px-10 border-b border-slate-50 shrink-0">
         <label className="bg-[#FFD600] text-black px-8 py-3 rounded-xl text-[12px] font-black uppercase tracking-widest shadow-[0_4px_0_0_#b89b00] cursor-pointer">
           Upload
@@ -167,7 +171,7 @@ export default function DesignStudio() {
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-10 cursor-crosshair overflow-visible">
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
               {svgContent && <g dangerouslySetInnerHTML={{ __html: svgContent }} onClick={handleSourceClick} className="opacity-0" style={{ fill: 'red', pointerEvents: 'auto' }} />}
-              {sourceDots.map(dot => <circle key={dot.id} cx={dot.x} cy={dot.y} r="3" fill="#2563eb" />)}
+              {sourceDots.map(dot => <circle key={dot.id} cx={dot.x} cy={dot.y} r="2.5" fill="#2563eb" />)}
             </svg>
           </div>
 
@@ -201,19 +205,19 @@ export default function DesignStudio() {
                       />
                     )}
 
-                    {shape.showDots && shape.dots.length > 0 && (
+                    {shape.showDots && (
                       <>
                         <path d={generatePathData(shape.dots)} fill="none" stroke="#2563eb" strokeWidth="1" strokeDasharray="4" pointerEvents="none" />
                         {shape.dots.map(dot => (
                           <circle 
-                            key={dot.id} cx={dot.x} cy={dot.y} r="3.0" fill="#2563eb" 
+                            key={dot.id} cx={dot.x} cy={dot.y} r="2.5" fill="#2563eb" 
                             className="cursor-move hover:fill-orange-500 transition-colors"
                             onMouseDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }}
                           />
                         ))}
                         <rect 
-                          x={shape.dims.width - 15} y={shape.dims.height - 15} width="30" height="30"
-                          fill="#f97316" className="cursor-nwse-resize opacity-80"
+                          x={shape.dims.width - 15} y={shape.dims.height - 15} width="60" height="60"
+                          fill="#f97316" rx="8" className="cursor-nwse-resize opacity-80"
                           onMouseDown={(e) => {
                             e.stopPropagation();
                             setResizingId(shape.id);
@@ -229,11 +233,11 @@ export default function DesignStudio() {
         </div>
       </div>
 
-      {/* GALLERY FOOTER */}
       <div className="h-[180px] w-full flex items-center px-12 border-t border-slate-100 bg-white shrink-0">
         <div className="flex gap-8 overflow-x-auto py-4 no-scrollbar w-full">
           {templates.map((url, i) => (
-            <button key={i} onClick={() => setSelectedImage(url)} className={`flex-shrink-0 w-[100px] h-[100px] rounded-2xl border-2 transition-all overflow-hidden ${selectedImage === url ? 'scale-105 border-[#FFD600] shadow-lg' : 'opacity-40 border-transparent hover:opacity-100'}`}>
+            <button key={i} onClick={() => setSelectedImage(url)} 
+              className={`flex-shrink-0 w-[100px] h-[100px] rounded-2xl border-2 transition-all overflow-hidden ${selectedImage === url ? 'scale-105 border-[#FFD600] shadow-lg' : 'border-transparent'}`}>
               <img src={url} className="w-full h-full object-cover" alt={`Template ${i}`} />
             </button>
           ))}
