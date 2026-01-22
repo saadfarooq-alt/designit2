@@ -36,6 +36,7 @@ export default function DesignStudio() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [sourceZoom, setSourceZoom] = useState(1);
+  const [isMobile, setIsMobile] = useState(false);
 
   // --- Workspace & Tool State ---
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
@@ -62,7 +63,13 @@ export default function DesignStudio() {
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => { 
+    setMounted(true); 
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 1. Load Templates
   useEffect(() => {
@@ -237,14 +244,12 @@ export default function DesignStudio() {
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        {/* SOURCE PANEL: Vertically stacked controls on mobile */}
-        <aside className="h-[48%] md:h-full w-full md:w-[380px] p-4 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-4 shrink-0 overflow-hidden">
+        {/* SOURCE PANEL */}
+        <aside className="h-[48%] md:h-full w-full md:w-[380px] p-3 md:p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row md:flex-col gap-3 shrink-0 overflow-hidden">
           
-          {/* Vertical Controls for Mobile (Side Column) / Top for Desktop */}
-          <div className="flex flex-col md:flex-col gap-4 shrink-0 w-[60px] md:w-full items-center justify-between md:order-2">
+          <div className="flex flex-col gap-4 shrink-0 w-[65px] md:w-full items-center md:order-2">
             
-            {/* Zoom Slider: Vertical on mobile, Horizontal on desktop */}
-            <div className="flex-1 flex items-center justify-center md:w-full h-[150px] md:h-auto">
+            <div className="flex-1 flex items-center justify-center w-full min-h-[100px]">
                 <input 
                     type="range" 
                     min={0.5} 
@@ -252,16 +257,17 @@ export default function DesignStudio() {
                     step={0.1} 
                     value={sourceZoom} 
                     onChange={e => setSourceZoom(parseFloat(e.target.value))} 
-                    className="accent-slate-900 cursor-pointer md:w-full"
+                    className="accent-slate-900 cursor-pointer"
                     style={{
-                        writingMode: typeof window !== 'undefined' && window.innerWidth < 768 ? 'bt-lr' : 'horizontal-tb',
-                        WebkitAppearance: typeof window !== 'undefined' && window.innerWidth < 768 ? 'slider-vertical' : 'none'
-                    } as any}
+                        writingMode: isMobile ? 'vertical-lr' : 'horizontal-tb',
+                        WebkitAppearance: isMobile ? 'slider-vertical' : 'none',
+                        height: isMobile ? '130px' : 'auto',
+                        width: isMobile ? '12px' : '100%'
+                    } as React.CSSProperties}
                 />
             </div>
 
-            {/* Action Buttons: Vertical Stack on Mobile */}
-            <div className="flex flex-col md:flex-row gap-3 w-full">
+            <div className="flex flex-col md:flex-row gap-2 w-full shrink-0">
               <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
                 let pts: Dot[] = [];
@@ -277,7 +283,7 @@ export default function DesignStudio() {
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-              }} className="w-full bg-slate-100 text-slate-900 py-3 md:py-4 rounded-xl md:rounded-2xl text-[8px] md:text-[10px] font-black uppercase shadow-sm active:bg-slate-200 transition-colors">
+              }} className="w-full h-12 md:h-14 bg-slate-100 text-slate-900 rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase shadow-sm active:bg-slate-200 transition-colors">
                 Sample
               </button>
               
@@ -285,13 +291,12 @@ export default function DesignStudio() {
                 saveForUndo();
                 setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: 0.5, showDots: true }]);
                 setSourceDots([]);
-              }} disabled={sourceDots.length === 0} className="w-full bg-blue-600 text-white py-3 md:py-4 rounded-xl md:rounded-2xl text-[8px] md:text-[10px] font-black uppercase disabled:opacity-30 shadow-lg shadow-blue-100">
-                Add
+              }} disabled={sourceDots.length === 0} className="w-full h-12 md:h-14 bg-blue-600 text-white rounded-xl md:rounded-2xl text-[9px] md:text-[10px] font-black uppercase disabled:opacity-30 shadow-lg shadow-blue-100">
+                {isMobile ? "Add" : "Add Unit"}
               </button>
             </div>
           </div>
 
-          {/* Image Preview Area */}
           <div className="flex-1 bg-slate-50 rounded-[1.5rem] md:rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center md:order-1">
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
@@ -373,6 +378,15 @@ export default function DesignStudio() {
               </g>
             ))}
           </svg>
+
+          {contextMenu && (
+            <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" 
+                 style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
+              <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100">Bring to Front</button>
+              <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-colors">Delete Unit</button>
+              <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase hover:bg-slate-50 transition-colors">Cancel</button>
+            </div>
+          )}
         </main>
 
         {/* TOOL PANEL */}
