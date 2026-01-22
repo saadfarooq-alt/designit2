@@ -35,27 +35,26 @@ export default function DesignStudio() {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
 
-  // Pinch/Wheel Tracking
+  // Pinch & Long Press Tracking
   const [initialPinchDist, setInitialPinchDist] = useState<number | null>(null);
   const [initialPinchScale, setInitialPinchScale] = useState<number | null>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
   const workspaceRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
-  // --- DESKTOP TRACKPAD & MOBILE PINCH LOCK ---
+  // --- PRODUCTION & MOBILE GESTURE ENGINE ---
   useEffect(() => {
     const workspace = workspaceRef.current;
     if (!workspace) return;
 
-    // Prevents browser zoom on mobile pinch and desktop trackpad pinch
     const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey) { // Browsers report trackpad pinch as Wheel + CtrlKey
+      if (e.ctrlKey) { 
         e.preventDefault();
         const zoomSpeed = 0.01;
         const delta = -e.deltaY;
         setWorkspaceShapes(prev => {
-            // We apply the zoom to the last selected or dragged shape
             if (!draggingShapeId && prev.length === 0) return prev;
             const targetId = draggingShapeId || prev[prev.length - 1].id;
             return prev.map(s => s.id === targetId ? { ...s, scale: Math.max(0.05, s.scale + delta * zoomSpeed) } : s);
@@ -64,9 +63,11 @@ export default function DesignStudio() {
     };
 
     const handleTouch = (e: TouchEvent) => {
+      // Prevent browser scale on multi-touch
       if (e.touches.length > 1 && e.cancelable) e.preventDefault();
     };
 
+    // Use passive: false to ensure preventDefault() works in production
     workspace.addEventListener('wheel', handleWheel, { passive: false });
     workspace.addEventListener('touchstart', handleTouch, { passive: false });
     workspace.addEventListener('touchmove', handleTouch, { passive: false });
@@ -129,7 +130,11 @@ export default function DesignStudio() {
   };
 
   const handleTouchStart = (e: React.TouchEvent, shapeId: string) => {
+    // Clear any pending long-press if a new touch starts
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+
     if (e.touches.length === 2) {
+      // Pinch Initialization
       const dist = getTouchDist(e.touches);
       const shape = workspaceShapes.find(s => s.id === shapeId);
       if (shape) {
@@ -137,10 +142,23 @@ export default function DesignStudio() {
         setInitialPinchScale(shape.scale);
         setDraggingShapeId(shapeId);
       }
+    } else if (e.touches.length === 1) {
+      // Long Press Initialization for Mobile Menu
+      const touch = e.touches[0];
+      longPressTimer.current = setTimeout(() => {
+        setContextMenu({ x: touch.clientX, y: touch.clientY, id: shapeId });
+        if (window.navigator.vibrate) window.navigator.vibrate(50); // Feedback
+      }, 600); // Trigger after 600ms
     }
   };
 
   const handleMove = (e: any) => {
+    // If movement occurs, it's not a long press
+    if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+        longPressTimer.current = null;
+    }
+
     if (!workspaceRef.current || (!draggingDot && !draggingShapeId && !resizingId)) return;
     
     // PINCH ZOOM (Mobile)
@@ -168,6 +186,7 @@ export default function DesignStudio() {
   };
 
   const clearInteraction = () => {
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
     setDraggingDot(null);
     setDraggingShapeId(null);
     setResizingId(null);
@@ -178,7 +197,9 @@ export default function DesignStudio() {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden text-slate-900" onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden text-slate-900" 
+         onClick={() => setContextMenu(null)}
+         style={{ WebkitUserSelect: 'none', userSelect: 'none' }}>
       
       <header className="h-[60px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50">
         <span className="font-black text-xs uppercase tracking-tight">Studio v2</span>
@@ -194,8 +215,6 @@ export default function DesignStudio() {
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
-        
-        {/* SOURCE SIDEBAR */}
         <div className="h-[50%] md:h-full md:w-[30%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0">
           <div className="flex justify-between items-center mb-2 px-1">
              <span className="text-[10px] font-bold text-slate-500 uppercase">Source Zoom</span>
@@ -227,14 +246,13 @@ export default function DesignStudio() {
               position: { x: 50, y: 50 }, scale: 0.4, showDots: true
             }]);
             setSourceDots([]);
-          }} disabled={sourceDots.length === 0} className="mt-2 bg-slate-900 text-white py-3 rounded-lg font-bold text-[10px] uppercase disabled:opacity-30 active:scale-[0.98]">
+          }} disabled={sourceDots.length === 0} className="mt-2 bg-slate-900 text-white py-3 rounded-lg font-bold text-[10px] uppercase">
             Add to Workspace ↓
           </button>
         </div>
 
-        {/* WORKSPACE */}
         <main className="flex-1 bg-white relative overflow-hidden touch-none"
-              style={{ touchAction: 'none' }}
+              style={{ touchAction: 'none', WebkitTouchCallout: 'none' }}
               onMouseMove={handleMove} onMouseUp={clearInteraction}
               onTouchMove={handleMove} onTouchEnd={clearInteraction}>
           <svg ref={workspaceRef} className="w-full h-full">
@@ -244,6 +262,7 @@ export default function DesignStudio() {
                 <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} />
                 <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#c-${shape.id})`}
                        className="cursor-move"
+                       style={{ WebkitTouchCallout: 'none' }}
                        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id }); }}
                        onMouseDown={(e: any) => {
                          e.stopPropagation();
@@ -252,8 +271,6 @@ export default function DesignStudio() {
                            const c = getCoords(e);
                            setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
                          }
-                         if (activeTool === 'fill') setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s));
-                         if (activeTool === 'erase') setWorkspaceShapes(prev => prev.filter(s => s.id !== shape.id));
                        }}
                        onTouchStart={(e: any) => {
                          e.stopPropagation();
@@ -284,14 +301,17 @@ export default function DesignStudio() {
           </svg>
           
           {contextMenu && (
-            <div className="fixed bg-white border shadow-xl rounded-md py-1 z-[100] min-w-[120px]"
+            <div className="fixed bg-white border shadow-2xl rounded-lg py-2 z-[100] min-w-[150px]"
                  style={{ left: contextMenu.x, top: contextMenu.y }}>
               <button onClick={() => {
                 const shape = workspaceShapes.find(s => s.id === contextMenu.id);
                 if (shape) setWorkspaceShapes([...workspaceShapes.filter(s => s.id !== contextMenu.id), shape]);
                 setContextMenu(null);
-              }} className="w-full text-left px-4 py-2 text-[10px] font-bold uppercase hover:bg-slate-50 border-b">
+              }} className="w-full text-left px-5 py-3 text-[11px] font-bold uppercase hover:bg-slate-50 border-b">
                 Bring To Front
+              </button>
+              <button onClick={() => setContextMenu(null)} className="w-full text-left px-5 py-3 text-[11px] font-bold uppercase text-red-500 hover:bg-red-50">
+                Cancel
               </button>
             </div>
           )}
