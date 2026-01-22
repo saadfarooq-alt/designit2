@@ -24,9 +24,7 @@ export default function DesignStudio() {
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   
-  // ADDED: Zoom State
   const [sourceZoom, setSourceZoom] = useState(1);
-
   const [activeTool, setActiveTool] = useState('cursor');
   const [activeColor, setActiveColor] = useState('#f97316');
   const [globalShowDots, setGlobalShowDots] = useState(true);
@@ -37,9 +35,48 @@ export default function DesignStudio() {
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
 
+  // Pinch/Wheel Tracking
+  const [initialPinchDist, setInitialPinchDist] = useState<number | null>(null);
+  const [initialPinchScale, setInitialPinchScale] = useState<number | null>(null);
+
   const workspaceRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => { setMounted(true); }, []);
+
+  // --- DESKTOP TRACKPAD & MOBILE PINCH LOCK ---
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+
+    // Prevents browser zoom on mobile pinch and desktop trackpad pinch
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) { // Browsers report trackpad pinch as Wheel + CtrlKey
+        e.preventDefault();
+        const zoomSpeed = 0.01;
+        const delta = -e.deltaY;
+        setWorkspaceShapes(prev => {
+            // We apply the zoom to the last selected or dragged shape
+            if (!draggingShapeId && prev.length === 0) return prev;
+            const targetId = draggingShapeId || prev[prev.length - 1].id;
+            return prev.map(s => s.id === targetId ? { ...s, scale: Math.max(0.05, s.scale + delta * zoomSpeed) } : s);
+        });
+      }
+    };
+
+    const handleTouch = (e: TouchEvent) => {
+      if (e.touches.length > 1 && e.cancelable) e.preventDefault();
+    };
+
+    workspace.addEventListener('wheel', handleWheel, { passive: false });
+    workspace.addEventListener('touchstart', handleTouch, { passive: false });
+    workspace.addEventListener('touchmove', handleTouch, { passive: false });
+
+    return () => {
+      workspace.removeEventListener('wheel', handleWheel);
+      workspace.removeEventListener('touchstart', handleTouch);
+      workspace.removeEventListener('touchmove', handleTouch);
+    };
+  }, [mounted, draggingShapeId]);
 
   const generatePathData = (dots: Dot[]) => {
     if (dots.length === 0) return "";
@@ -72,7 +109,6 @@ export default function DesignStudio() {
       }, { numberofcolors: 2, ltres: 1, qtres: 1, scale: 1 });
     };
     img.src = selectedImage;
-    // Reset zoom when image changes
     setSourceZoom(1);
   }, [selectedImage]);
 
@@ -86,10 +122,38 @@ export default function DesignStudio() {
     return { x: clientX - rect.left, y: clientY - rect.top, rawX: clientX, rawY: clientY };
   };
 
+  const getTouchDist = (touches: React.TouchList) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent, shapeId: string) => {
+    if (e.touches.length === 2) {
+      const dist = getTouchDist(e.touches);
+      const shape = workspaceShapes.find(s => s.id === shapeId);
+      if (shape) {
+        setInitialPinchDist(dist);
+        setInitialPinchScale(shape.scale);
+        setDraggingShapeId(shapeId);
+      }
+    }
+  };
+
   const handleMove = (e: any) => {
     if (!workspaceRef.current || (!draggingDot && !draggingShapeId && !resizingId)) return;
+    
+    // PINCH ZOOM (Mobile)
+    if (e.touches && e.touches.length === 2 && draggingShapeId && initialPinchDist && initialPinchScale !== null) {
+      const currentDist = getTouchDist(e.touches);
+      const factor = currentDist / initialPinchDist;
+      setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, scale: Math.max(0.05, initialPinchScale * factor) } : s));
+      return;
+    }
+
     if (e.cancelable) e.preventDefault();
     const coords = getCoords(e);
+
     if (resizingId) {
       const dx = coords.rawX - dragOffset.x;
       setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (dx / 300)) } : s));
@@ -103,12 +167,19 @@ export default function DesignStudio() {
     }
   };
 
+  const clearInteraction = () => {
+    setDraggingDot(null);
+    setDraggingShapeId(null);
+    setResizingId(null);
+    setInitialPinchDist(null);
+    setInitialPinchScale(null);
+  };
+
   if (!mounted) return null;
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden text-slate-900" onClick={() => setContextMenu(null)}>
       
-      {/* HEADER */}
       <header className="h-[60px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50">
         <span className="font-black text-xs uppercase tracking-tight">Studio v2</span>
         <div className="flex gap-4 items-center">
@@ -122,18 +193,13 @@ export default function DesignStudio() {
         </div>
       </header>
 
-      {/* BANNER */}
-      <div className="bg-orange-400 text-white text-[10px] font-bold uppercase py-1.5 px-6 flex items-center justify-center gap-2 shrink-0">
-        <span>⚠️ Studio Under Construction - Daily Updates ⚠️</span>
-      </div>
-
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        {/* SOURCE PANEL - Restored with Zoom Added */}
-        <div className="h-[65%] md:h-full md:w-[35%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0">
+        {/* SOURCE SIDEBAR */}
+        <div className="h-[50%] md:h-full md:w-[30%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0">
           <div className="flex justify-between items-center mb-2 px-1">
-             <span className="text-[10px] font-bold text-slate-500 uppercase">Zoom</span>
-             <input type="range" min="1" max="5" step="0.1" value={sourceZoom} onChange={(e)=>setSourceZoom(parseFloat(e.target.value))} className="w-32 accent-blue-600" />
+             <span className="text-[10px] font-bold text-slate-500 uppercase">Source Zoom</span>
+             <input type="range" min="1" max="5" step="0.1" value={sourceZoom} onChange={(e)=>setSourceZoom(parseFloat(e.target.value))} className="w-24 accent-blue-600" />
           </div>
           <div className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-auto shadow-inner">
             <div style={{ width: `${100 * sourceZoom}%`, height: `${100 * sourceZoom}%` }} className="relative">
@@ -161,15 +227,16 @@ export default function DesignStudio() {
               position: { x: 50, y: 50 }, scale: 0.4, showDots: true
             }]);
             setSourceDots([]);
-          }} disabled={sourceDots.length === 0} className="mt-2 bg-slate-900 text-white py-3 rounded-lg font-bold text-[10px] uppercase disabled:opacity-30 active:scale-[0.98] transition-transform">
+          }} disabled={sourceDots.length === 0} className="mt-2 bg-slate-900 text-white py-3 rounded-lg font-bold text-[10px] uppercase disabled:opacity-30 active:scale-[0.98]">
             Add to Workspace ↓
           </button>
         </div>
 
-        {/* WORKSPACE - Exact logic restored */}
+        {/* WORKSPACE */}
         <main className="flex-1 bg-white relative overflow-hidden touch-none"
-              onMouseMove={handleMove} onMouseUp={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}
-              onTouchMove={handleMove} onTouchEnd={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}>
+              style={{ touchAction: 'none' }}
+              onMouseMove={handleMove} onMouseUp={clearInteraction}
+              onTouchMove={handleMove} onTouchEnd={clearInteraction}>
           <svg ref={workspaceRef} className="w-full h-full">
             {workspaceShapes.map(shape => (
               <g key={shape.id} style={{ transform: `translate(${shape.position.x}px, ${shape.position.y}px) scale(${shape.scale})` }}>
@@ -190,7 +257,8 @@ export default function DesignStudio() {
                        }}
                        onTouchStart={(e: any) => {
                          e.stopPropagation();
-                         if (activeTool === 'cursor') {
+                         handleTouchStart(e, shape.id); 
+                         if (activeTool === 'cursor' && e.touches.length === 1) {
                            setDraggingShapeId(shape.id);
                            const c = getCoords(e);
                            setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
@@ -224,12 +292,6 @@ export default function DesignStudio() {
                 setContextMenu(null);
               }} className="w-full text-left px-4 py-2 text-[10px] font-bold uppercase hover:bg-slate-50 border-b">
                 Bring To Front
-              </button>
-              <button onClick={() => {
-                setWorkspaceShapes(prev => prev.map(s => s.id === contextMenu.id ? {...s, showDots: !s.showDots} : s));
-                setContextMenu(null);
-              }} className="w-full text-left px-4 py-2 text-[10px] font-bold uppercase hover:bg-slate-50">
-                Toggle Dots
               </button>
             </div>
           )}
