@@ -359,7 +359,7 @@ export default function DesignStudio() {
                     if (longPressTimer.current) clearTimeout(longPressTimer.current);
                     longPressTimer.current = setTimeout(() => {
                       setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
-                    }, 1000);
+                    }, 1300);
                     if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
                     if (activeTool === "cursor") {
                         e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id);
@@ -369,7 +369,7 @@ export default function DesignStudio() {
                 />
                 <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} pointerEvents="none" opacity={0.6} />
                 {globalShowDots && shape.dots.map(dot => (
-                  <circle key={dot.id} cx={dot.x} cy={dot.y} r={3 / shape.scale} fill="#3b82f6" 
+                  <circle key={dot.id} cx={dot.x} cy={dot.y} r={4.5 / shape.scale} fill="#3b82f6" 
                     onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); } }} />
                 ))}
                 {globalShowDots && (
