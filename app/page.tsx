@@ -238,7 +238,7 @@ export default function DesignStudio() {
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
         {/* SOURCE PANEL: Now more compact without the upload button */}
-        <aside className="h-[35%] md:h-full w-full md:w-[380px] p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-col gap-5 shrink-0 overflow-hidden">
+        <aside className="h-[45%] md:h-full w-full md:w-[380px] p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-col gap-5 shrink-0 overflow-hidden">
           <div className="flex-1 bg-slate-50 rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center">
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
