@@ -118,7 +118,7 @@ export default function DesignStudio() {
     setCandidates(results);
   }, [svgContent]);
 
-  // 3. Coordinate Helpers - Fixed Types
+  // 3. Coordinate Helpers
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0, rx: 0, ry: 0 };
@@ -203,24 +203,42 @@ export default function DesignStudio() {
       onContextMenu={(e) => e.preventDefault()}
     >
       
-      {/* HEADER */}
-      <header className="h-[65px] flex items-center justify-between px-6 bg-white/80 backdrop-blur-md border-b shrink-0 z-50 shadow-sm">
+      {/* HEADER: Unified Navigation and Global Actions */}
+      <header className="h-[65px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50 shadow-sm">
         <div className="flex items-center gap-6">
-          <span className="font-black text-[12px] uppercase tracking-[0.2em] text-slate-900">Studio v2</span>
+          <span className="font-black text-[12px] uppercase tracking-[0.2em] text-slate-900 hidden md:block">Studio v2</span>
         </div>
-        <div className="flex gap-2">
-          <button onClick={undo} className="px-5 py-2.5 bg-white border border-slate-200 rounded-2xl text-[10px] font-bold uppercase shadow-[0_4px_12px_rgba(0,0,0,0.05)] active:scale-95 transition-all">Undo</button>
-          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-5 py-2.5 bg-red-500 text-white rounded-2xl text-[10px] font-bold uppercase shadow-[0_4px_12px_rgba(239,68,68,0.2)]">Reset</button>
+        
+        <div className="flex items-center gap-3">
+          <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
+          <button 
+            onClick={() => fileInputRef.current?.click()} 
+            className="px-5 py-2.5 bg-slate-900 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-lg active:scale-95 transition-all"
+          >
+            Upload
+          </button>
+          
+          <div className="w-px h-6 bg-slate-200 mx-1 hidden md:block" />
+
+          <button 
+            onClick={undo} 
+            className="px-5 py-2.5 bg-white border border-slate-200 rounded-2xl text-[10px] font-bold uppercase shadow-sm active:scale-95 transition-all"
+          >
+            Undo
+          </button>
+          
+          <button 
+            onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} 
+            className="px-5 py-2.5 bg-red-500 text-white rounded-2xl text-[10px] font-bold uppercase shadow-lg shadow-red-100 active:scale-95 transition-all"
+          >
+            Reset
+          </button>
         </div>
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        {/* SOURCE PANEL */}
-        <aside className="h-[40%] md:h-full w-full md:w-[380px] p-6 bg-white rounded-[2.5rem] border border-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex flex-col gap-5 shrink-0 overflow-hidden">
-          <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
-          <button onClick={() => fileInputRef.current?.click()} className="w-full bg-slate-900 text-white py-4 rounded-2xl text-[10px] font-bold uppercase tracking-widest shadow-xl active:scale-95 transition-all shrink-0">
-            Upload Image
-          </button>
+        {/* SOURCE PANEL: Now more compact without the upload button */}
+        <aside className="h-[35%] md:h-full w-full md:w-[380px] p-6 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-col gap-5 shrink-0 overflow-hidden">
           <div className="flex-1 bg-slate-50 rounded-[2rem] border border-slate-200 relative overflow-hidden shadow-inner flex items-center justify-center">
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full" style={{ transform: `scale(${sourceZoom})` }}>
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
@@ -231,6 +249,7 @@ export default function DesignStudio() {
               {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={3} fill="#3b82f6" />)}
             </svg>
           </div>
+          
           <div className="flex flex-col gap-3 shrink-0">
             <input type="range" min={0.5} max={4} step={0.1} value={sourceZoom} onChange={e => setSourceZoom(parseFloat(e.target.value))} className="w-full accent-slate-900" />
             <div className="flex gap-3">
@@ -249,18 +268,19 @@ export default function DesignStudio() {
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-              }} className="flex-1 bg-white border border-slate-200 text-slate-900 py-4 rounded-2xl text-[10px] font-bold uppercase shadow-sm active:bg-slate-50">Sample</button>
+              }} className="flex-1 bg-white border border-slate-200 text-slate-900 py-4 rounded-2xl text-[10px] font-bold uppercase shadow-sm active:bg-slate-50 transition-colors">Sample</button>
+              
               <button onClick={() => {
                 saveForUndo();
                 setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: 0.5, showDots: true }]);
                 setSourceDots([]);
-              }} disabled={sourceDots.length === 0} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl text-[10px] font-bold uppercase disabled:opacity-30 shadow-lg shadow-blue-200">Add Unit</button>
+              }} disabled={sourceDots.length === 0} className="flex-1 bg-blue-600 text-white py-4 rounded-2xl text-[10px] font-bold uppercase disabled:opacity-30 shadow-lg shadow-blue-100">Add Unit</button>
             </div>
           </div>
         </aside>
 
         {/* WORKSPACE */}
-        <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] relative overflow-hidden min-h-[300px]" 
+        <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-xl relative overflow-hidden min-h-[300px]" 
           onTouchStart={(e) => {
             if (e.touches.length === 2 && draggingShapeId) {
               setInitialPinchDist(getPinchDist(e.touches));
@@ -328,8 +348,7 @@ export default function DesignStudio() {
                     }
                   }}
                   onContextMenu={(e) => { 
-                    e.preventDefault(); 
-                    e.stopPropagation(); 
+                    e.preventDefault(); e.stopPropagation(); 
                     setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id }); 
                   }}
                 />
@@ -347,7 +366,7 @@ export default function DesignStudio() {
           </svg>
 
           {contextMenu && (
-            <div className="fixed bg-white border border-slate-200 shadow-[0_10px_40px_rgba(0,0,0,0.2)] rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" 
+            <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px] overflow-hidden" 
                  style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
               <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-slate-900 hover:bg-slate-50 transition-colors border-b border-slate-100">Bring to Front</button>
               <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 transition-colors">Delete Unit</button>
@@ -357,10 +376,10 @@ export default function DesignStudio() {
         </main>
 
         {/* TOOL PANEL */}
-        <aside className="w-full md:w-[100px] h-[80px] md:h-full bg-white rounded-[2.5rem] border border-white shadow-[0_20px_50px_rgba(0,0,0,0.1)] flex md:flex-col flex-row items-center md:py-8 px-4 md:px-0 gap-6 shrink-0">
+        <aside className="w-full md:w-[100px] h-[80px] md:h-full bg-white rounded-[2.5rem] border border-white shadow-xl flex md:flex-col flex-row items-center md:py-8 px-4 md:px-0 gap-6 shrink-0">
           <div className="flex md:flex-col flex-row gap-3 p-2 bg-slate-50 rounded-[2rem] border border-slate-100 shadow-inner">
             {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
-              <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-[1.25rem] transition-all duration-300 ${activeTool === tool ? 'bg-white shadow-[0_8px_20px_rgba(0,0,0,0.1)] text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-900'}`}>
+              <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-14 md:h-14 flex items-center justify-center rounded-[1.25rem] transition-all duration-300 ${activeTool === tool ? 'bg-white shadow-md text-blue-600 scale-110' : 'text-slate-400 hover:text-slate-900'}`}>
                 <span className="text-[12px] md:text-[16px] font-black uppercase">{tool.charAt(0)}</span>
               </button>
             ))}
@@ -376,10 +395,10 @@ export default function DesignStudio() {
 
       {/* FOOTER */}
       <footer className="h-[110px] px-3 pb-3 shrink-0">
-        <div className="h-full bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white shadow-[0_10px_40px_rgba(0,0,0,0.05)] flex items-center px-10">
+        <div className="h-full bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white shadow-md flex items-center px-10">
           <div className="flex-1 flex gap-6 overflow-x-auto py-2 no-scrollbar items-center">
             {templates.map((url, i) => (
-              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-16 w-16 rounded-2xl object-cover cursor-pointer border-4 transition-all ${selectedImage === url ? 'border-blue-500 scale-110 shadow-xl' : 'border-white opacity-40 shadow-md'}`} />
+              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-16 w-16 rounded-2xl object-cover cursor-pointer border-4 transition-all ${selectedImage === url ? 'border-blue-500 scale-110 shadow-xl' : 'border-white opacity-40'}`} />
             ))}
           </div>
         </div>
