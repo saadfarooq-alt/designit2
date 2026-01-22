@@ -200,23 +200,26 @@ export default function DesignStudio() {
       onContextMenu={(e) => e.preventDefault()}
     >
       
-      {/* HEADER */}
-      <header className="h-[60px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50">
-        <span className="font-black text-[12px] uppercase tracking-widest text-slate-900">Studio v2</span>
-        <div className="flex items-center gap-3">
+      {/* HEADER - With Hide Dots beside Upload */}
+      <header className="h-[60px] flex items-center justify-between px-4 md:px-6 bg-white border-b shrink-0 z-50">
+        <span className="font-black text-[10px] md:text-[12px] uppercase tracking-widest text-slate-900">Studio v2</span>
+        <div className="flex items-center gap-2 md:gap-3">
           <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
-          <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-slate-900 text-white rounded-xl text-[10px] font-bold uppercase shadow-lg">Upload</button>
-          <button onClick={undo} className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-bold uppercase shadow-sm">Undo</button>
-          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-4 py-2 bg-red-500 text-white rounded-xl text-[10px] font-bold uppercase shadow-lg">Reset</button>
+          
+          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-colors ${globalShowDots ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
+            {globalShowDots ? "Hide Dots" : "Show Dots"}
+          </button>
+
+          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Upload</button>
+          <button onClick={undo} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-bold uppercase shadow-sm">Undo</button>
+          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-500 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Reset</button>
         </div>
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
         
-        {/* SOURCE PANEL (38% Mobile Height) */}
+        {/* SOURCE PANEL (38% Height on mobile) */}
         <aside className="h-[38%] md:h-full w-full md:w-[380px] p-3 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row gap-3 shrink-0 overflow-hidden">
-          
-          {/* LEFT CONTROLS FOR SOURCE */}
           <div className="flex flex-col gap-2 w-[75px] md:w-[100px] shrink-0">
             <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
@@ -261,7 +264,6 @@ export default function DesignStudio() {
 
         {/* WORKSPACE AREA + TOOLS ON LEFT */}
         <div className="flex-1 flex flex-row gap-3 min-h-0">
-          
           <aside className="w-[65px] md:w-[85px] h-full bg-white rounded-[2rem] border border-white shadow-xl flex flex-col items-center py-6 gap-6 shrink-0">
             <div className="flex flex-col gap-3 p-2 bg-slate-50 rounded-[1.5rem] shadow-inner">
               {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
@@ -271,9 +273,6 @@ export default function DesignStudio() {
               ))}
             </div>
             <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 rounded-full border-4 border-white shadow-lg cursor-pointer" />
-            <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`w-11 h-11 flex items-center justify-center rounded-xl text-[9px] font-black uppercase ${globalShowDots ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-400'}`}>
-              {globalShowDots ? "ON" : "OFF"}
-            </button>
           </aside>
 
           <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-xl relative overflow-hidden" 
@@ -324,7 +323,7 @@ export default function DesignStudio() {
                       if (longPressTimer.current) clearTimeout(longPressTimer.current);
                       longPressTimer.current = setTimeout(() => {
                         setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
-                      }, 2300); // 2.3 seconds
+                      }, 2300);
                       if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
                       if (activeTool === "cursor") {
                           e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id);
@@ -357,7 +356,6 @@ export default function DesignStudio() {
         </div>
       </div>
 
-      {/* FOOTER GALLERY */}
       <footer className="h-[100px] px-3 pb-3 shrink-0">
         <div className="h-full bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
             {templates.map((url, i) => (
