@@ -359,7 +359,7 @@ export default function DesignStudio() {
                     if (longPressTimer.current) clearTimeout(longPressTimer.current);
                     longPressTimer.current = setTimeout(() => {
                       setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
-                    }, 1300);
+                    }, 2300);
                     if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
                     if (activeTool === "cursor") {
                         e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id);
