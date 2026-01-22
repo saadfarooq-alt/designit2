@@ -24,6 +24,9 @@ export default function DesignStudio() {
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   
+  // ADDED: Zoom State
+  const [sourceZoom, setSourceZoom] = useState(1);
+
   const [activeTool, setActiveTool] = useState('cursor');
   const [activeColor, setActiveColor] = useState('#f97316');
   const [globalShowDots, setGlobalShowDots] = useState(true);
@@ -69,6 +72,8 @@ export default function DesignStudio() {
       }, { numberofcolors: 2, ltres: 1, qtres: 1, scale: 1 });
     };
     img.src = selectedImage;
+    // Reset zoom when image changes
+    setSourceZoom(1);
   }, [selectedImage]);
 
   useEffect(() => { if (selectedImage) runTrace(); }, [selectedImage, runTrace]);
@@ -83,10 +88,7 @@ export default function DesignStudio() {
 
   const handleMove = (e: any) => {
     if (!workspaceRef.current || (!draggingDot && !draggingShapeId && !resizingId)) return;
-    
-    // Prevent scrolling ONLY when actively dragging/editing
     if (e.cancelable) e.preventDefault();
-
     const coords = getCoords(e);
     if (resizingId) {
       const dx = coords.rawX - dragOffset.x;
@@ -104,8 +106,7 @@ export default function DesignStudio() {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden text-slate-900"
-         onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden text-slate-900" onClick={() => setContextMenu(null)}>
       
       {/* HEADER */}
       <header className="h-[60px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50">
@@ -128,25 +129,31 @@ export default function DesignStudio() {
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        {/* SOURCE PANEL - Added touch-none here to prevent accidental scrolls while tapping paths */}
-        <div className="h-[65%] md:h-full md:w-[25%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0 touch-none">
-          <div className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
-            <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full cursor-crosshair">
-              {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
-              {svgContent && <g dangerouslySetInnerHTML={{ __html: svgContent }} onClick={(e:any) => {
-                const target = e.target as SVGPathElement;
-                if (target?.tagName.toLowerCase() === 'path') {
-                  const len = target.getTotalLength();
-                  const pts: Dot[] = [];
-                  for (let i = 0; i <= len; i += 15) {
-                    const p = target.getPointAtLength(i);
-                    pts.push({ id: Math.random().toString(36).substring(7), x: p.x, y: p.y });
+        {/* SOURCE PANEL - Restored with Zoom Added */}
+        <div className="h-[65%] md:h-full md:w-[35%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0">
+          <div className="flex justify-between items-center mb-2 px-1">
+             <span className="text-[10px] font-bold text-slate-500 uppercase">Zoom</span>
+             <input type="range" min="1" max="5" step="0.1" value={sourceZoom} onChange={(e)=>setSourceZoom(parseFloat(e.target.value))} className="w-32 accent-blue-600" />
+          </div>
+          <div className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-auto shadow-inner">
+            <div style={{ width: `${100 * sourceZoom}%`, height: `${100 * sourceZoom}%` }} className="relative">
+              <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full cursor-crosshair">
+                {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
+                {svgContent && <g dangerouslySetInnerHTML={{ __html: svgContent }} onClick={(e:any) => {
+                  const target = e.target as SVGPathElement;
+                  if (target?.tagName.toLowerCase() === 'path') {
+                    const len = target.getTotalLength();
+                    const pts: Dot[] = [];
+                    for (let i = 0; i <= len; i += 15) {
+                      const p = target.getPointAtLength(i);
+                      pts.push({ id: Math.random().toString(36).substring(7), x: p.x, y: p.y });
+                    }
+                    setSourceDots(pts);
                   }
-                  setSourceDots(pts);
-                }
-              }} className="opacity-0" style={{ pointerEvents: 'auto' }} />}
-              {sourceDots.map(dot => <circle key={dot.id} cx={dot.x} cy={dot.y} r="2.5" fill="#3b82f6" />)}
-            </svg>
+                }} className="opacity-0" style={{ pointerEvents: 'auto' }} />}
+                {sourceDots.map(dot => <circle key={dot.id} cx={dot.x} cy={dot.y} r={3 / sourceZoom} fill="#3b82f6" />)}
+              </svg>
+            </div>
           </div>
           <button onClick={() => {
             setWorkspaceShapes(prev => [...prev, {
@@ -154,12 +161,12 @@ export default function DesignStudio() {
               position: { x: 50, y: 50 }, scale: 0.4, showDots: true
             }]);
             setSourceDots([]);
-          }} disabled={sourceDots.length === 0} className="mt-2 bg-slate-900 text-white py-3 rounded-lg font-bold text-[10px] uppercase disabled:opacity-30">
+          }} disabled={sourceDots.length === 0} className="mt-2 bg-slate-900 text-white py-3 rounded-lg font-bold text-[10px] uppercase disabled:opacity-30 active:scale-[0.98] transition-transform">
             Add to Workspace ↓
           </button>
         </div>
 
-        {/* WORKSPACE - touch-none only here to ensure dot dragging works perfectly */}
+        {/* WORKSPACE - Exact logic restored */}
         <main className="flex-1 bg-white relative overflow-hidden touch-none"
               onMouseMove={handleMove} onMouseUp={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}
               onTouchMove={handleMove} onTouchEnd={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}>
@@ -208,7 +215,6 @@ export default function DesignStudio() {
             ))}
           </svg>
           
-          {/* CONTEXT MENU */}
           {contextMenu && (
             <div className="fixed bg-white border shadow-xl rounded-md py-1 z-[100] min-w-[120px]"
                  style={{ left: contextMenu.x, top: contextMenu.y }}>
@@ -237,7 +243,6 @@ export default function DesignStudio() {
         </aside>
       </div>
 
-      {/* FOOTER - Removed touch-none here to allow template scrolling */}
       <footer className="h-[130px] md:h-[90px] w-full bg-white border-t flex flex-col shrink-0">
         <div className="flex-1 flex items-center px-4 gap-3 overflow-x-auto border-b">
            {templates.map((url, i) => (
