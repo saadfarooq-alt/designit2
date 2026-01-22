@@ -32,8 +32,6 @@ export default function DesignStudio() {
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  
-  // State for Context Menu
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, id: string } | null>(null);
 
   const workspaceRef = useRef<SVGSVGElement>(null);
@@ -75,19 +73,6 @@ export default function DesignStudio() {
 
   useEffect(() => { if (selectedImage) runTrace(); }, [selectedImage, runTrace]);
 
-  const handleSourceClick = (e: any) => {
-    const target = e.target as SVGPathElement;
-    if (target?.tagName.toLowerCase() === 'path') {
-      const len = target.getTotalLength();
-      const pts: Dot[] = [];
-      for (let i = 0; i <= len; i += 15) {
-        const p = target.getPointAtLength(i);
-        pts.push({ id: Math.random().toString(36).substring(7), x: p.x, y: p.y });
-      }
-      setSourceDots(pts);
-    }
-  };
-
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
@@ -97,7 +82,11 @@ export default function DesignStudio() {
   };
 
   const handleMove = (e: any) => {
-    if (!workspaceRef.current) return;
+    if (!workspaceRef.current || (!draggingDot && !draggingShapeId && !resizingId)) return;
+    
+    // Prevent scrolling ONLY when actively dragging/editing
+    if (e.cancelable) e.preventDefault();
+
     const coords = getCoords(e);
     if (resizingId) {
       const dx = coords.rawX - dragOffset.x;
@@ -112,43 +101,18 @@ export default function DesignStudio() {
     }
   };
 
-  const handleBringToFront = (id: string) => {
-    const shape = workspaceShapes.find(s => s.id === id);
-    if (shape) {
-      setWorkspaceShapes(prev => [...prev.filter(s => s.id !== id), shape]);
-    }
-    setContextMenu(null);
-  };
-
   if (!mounted) return null;
 
-  const ToolbarContent = () => (
-    <>
-      {['cursor', 'fill', 'erase'].map(t => (
-        <button key={t} onClick={() => setActiveTool(t)} 
-                className={`flex-1 md:flex-none md:w-16 md:h-16 py-2 rounded-lg text-[10px] font-bold uppercase transition-all ${activeTool === t ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}>
-          {t}
-        </button>
-      ))}
-      <button onClick={() => setGlobalShowDots(!globalShowDots)} 
-              className={`flex-1 md:flex-none md:w-16 md:h-16 py-2 rounded-lg text-[10px] font-bold uppercase ${globalShowDots ? 'bg-orange-100 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
-        {globalShowDots ? 'Hide Dots' : 'Show Dots'}
-      </button>
-    </>
-  );
-
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-100 overflow-hidden text-slate-900 touch-none"
-         onClick={() => setContextMenu(null)}
-         onMouseMove={handleMove} onMouseUp={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}
-         onTouchMove={handleMove} onTouchEnd={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}>
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden text-slate-900"
+         onClick={() => setContextMenu(null)}>
       
       {/* HEADER */}
       <header className="h-[60px] flex items-center justify-between px-6 bg-white border-b shrink-0 z-50">
         <span className="font-black text-xs uppercase tracking-tight">Studio v2</span>
         <div className="flex gap-4 items-center">
            <input type="color" value={activeColor} onChange={(e) => setActiveColor(e.target.value)} className="w-8 h-8 rounded-full border-none cursor-pointer" />
-           <label className="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase cursor-pointer hover:bg-blue-700">
+           <label className="bg-blue-600 text-white px-4 py-2 rounded-lg text-[10px] font-bold uppercase cursor-pointer">
              Upload <input type="file" className="hidden" onChange={(e) => {
                const f = e.target.files?.[0]; if (f) setSelectedImage(URL.createObjectURL(f));
              }} />
@@ -164,12 +128,23 @@ export default function DesignStudio() {
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
         
-        {/* SOURCE PANEL */}
-        <div className="h-[30%] md:h-full md:w-[25%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0">
+        {/* SOURCE PANEL - Added touch-none here to prevent accidental scrolls while tapping paths */}
+        <div className="h-[30%] md:h-full md:w-[25%] bg-slate-50 border-b md:border-r p-4 flex flex-col shrink-0 touch-none">
           <div className="flex-1 bg-white rounded-xl border border-slate-200 relative overflow-hidden shadow-inner">
             <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full cursor-crosshair">
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
-              {svgContent && <g dangerouslySetInnerHTML={{ __html: svgContent }} onClick={handleSourceClick} className="opacity-0" style={{ pointerEvents: 'auto' }} />}
+              {svgContent && <g dangerouslySetInnerHTML={{ __html: svgContent }} onClick={(e:any) => {
+                const target = e.target as SVGPathElement;
+                if (target?.tagName.toLowerCase() === 'path') {
+                  const len = target.getTotalLength();
+                  const pts: Dot[] = [];
+                  for (let i = 0; i <= len; i += 15) {
+                    const p = target.getPointAtLength(i);
+                    pts.push({ id: Math.random().toString(36).substring(7), x: p.x, y: p.y });
+                  }
+                  setSourceDots(pts);
+                }
+              }} className="opacity-0" style={{ pointerEvents: 'auto' }} />}
               {sourceDots.map(dot => <circle key={dot.id} cx={dot.x} cy={dot.y} r="2.5" fill="#3b82f6" />)}
             </svg>
           </div>
@@ -184,8 +159,10 @@ export default function DesignStudio() {
           </button>
         </div>
 
-        {/* WORKSPACE */}
-        <main className="flex-1 bg-white relative overflow-hidden">
+        {/* WORKSPACE - touch-none only here to ensure dot dragging works perfectly */}
+        <main className="flex-1 bg-white relative overflow-hidden touch-none"
+              onMouseMove={handleMove} onMouseUp={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}
+              onTouchMove={handleMove} onTouchEnd={() => { setDraggingDot(null); setDraggingShapeId(null); setResizingId(null); }}>
           <svg ref={workspaceRef} className="w-full h-full">
             {workspaceShapes.map(shape => (
               <g key={shape.id} style={{ transform: `translate(${shape.position.x}px, ${shape.position.y}px) scale(${shape.scale})` }}>
@@ -193,12 +170,18 @@ export default function DesignStudio() {
                 <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} />
                 <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#c-${shape.id})`}
                        className="cursor-move"
-                       onContextMenu={(e) => {
-                         e.preventDefault();
-                         e.stopPropagation();
-                         setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
-                       }}
+                       onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id }); }}
                        onMouseDown={(e: any) => {
+                         e.stopPropagation();
+                         if (activeTool === 'cursor') {
+                           setDraggingShapeId(shape.id);
+                           const c = getCoords(e);
+                           setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                         }
+                         if (activeTool === 'fill') setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s));
+                         if (activeTool === 'erase') setWorkspaceShapes(prev => prev.filter(s => s.id !== shape.id));
+                       }}
+                       onTouchStart={(e: any) => {
                          e.stopPropagation();
                          if (activeTool === 'cursor') {
                            setDraggingShapeId(shape.id);
@@ -212,11 +195,13 @@ export default function DesignStudio() {
                   <>
                     <path d={generatePathData(shape.dots)} fill="none" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4" />
                     {shape.dots.map(dot => (
-                      <circle key={dot.id} cx={dot.x} cy={dot.y} r="2.5" fill="#3b82f6"
-                              onMouseDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />
+                      <circle key={dot.id} cx={dot.x} cy={dot.y} r="3" fill="#3b82f6"
+                              onMouseDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }}
+                              onTouchStart={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />
                     ))}
-                    <rect x={shape.dims.width - 5} y={shape.dims.height - 5} width="12" height="12" fill="#f97316" rx="2"
-                          onMouseDown={(e:any) => { e.stopPropagation(); setResizingId(shape.id); setDragOffset({ x: e.clientX, y: e.clientY }); }} />
+                    <rect x={shape.dims.width - 10} y={shape.dims.height - 10} width="20" height="20" fill="#f97316" rx="4"
+                          onMouseDown={(e:any) => { e.stopPropagation(); setResizingId(shape.id); setDragOffset({ x: e.clientX, y: e.clientY }); }}
+                          onTouchStart={(e:any) => { e.stopPropagation(); setResizingId(shape.id); setDragOffset({ x: e.touches[0].clientX, y: e.touches[0].clientY }); }} />
                   </>
                 )}
               </g>
@@ -227,15 +212,17 @@ export default function DesignStudio() {
           {contextMenu && (
             <div className="fixed bg-white border shadow-xl rounded-md py-1 z-[100] min-w-[120px]"
                  style={{ left: contextMenu.x, top: contextMenu.y }}>
-              <button onClick={() => handleBringToFront(contextMenu.id)}
-                      className="w-full text-left px-4 py-2 text-[10px] font-bold uppercase hover:bg-slate-50 border-b">
+              <button onClick={() => {
+                const shape = workspaceShapes.find(s => s.id === contextMenu.id);
+                if (shape) setWorkspaceShapes([...workspaceShapes.filter(s => s.id !== contextMenu.id), shape]);
+                setContextMenu(null);
+              }} className="w-full text-left px-4 py-2 text-[10px] font-bold uppercase hover:bg-slate-50 border-b">
                 Bring To Front
               </button>
               <button onClick={() => {
                 setWorkspaceShapes(prev => prev.map(s => s.id === contextMenu.id ? {...s, showDots: !s.showDots} : s));
                 setContextMenu(null);
-              }}
-                      className="w-full text-left px-4 py-2 text-[10px] font-bold uppercase hover:bg-slate-50">
+              }} className="w-full text-left px-4 py-2 text-[10px] font-bold uppercase hover:bg-slate-50">
                 Toggle Dots
               </button>
             </div>
@@ -243,20 +230,26 @@ export default function DesignStudio() {
         </main>
 
         <aside className="hidden md:flex w-24 border-l bg-white flex-col items-center py-6 gap-4 shrink-0">
-          <ToolbarContent />
+          {['cursor', 'fill', 'erase'].map(t => (
+            <button key={t} onClick={() => setActiveTool(t)} className={`w-16 h-16 py-2 rounded-lg text-[10px] font-bold uppercase ${activeTool === t ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-400'}`}>{t}</button>
+          ))}
+          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`w-16 h-16 py-2 rounded-lg text-[10px] font-bold uppercase ${globalShowDots ? 'bg-orange-100 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>Dots</button>
         </aside>
       </div>
 
-      {/* FOOTER */}
+      {/* FOOTER - Removed touch-none here to allow template scrolling */}
       <footer className="h-[130px] md:h-[90px] w-full bg-white border-t flex flex-col shrink-0">
-        <div className="flex-1 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar border-b">
+        <div className="flex-1 flex items-center px-4 gap-3 overflow-x-auto border-b">
            {templates.map((url, i) => (
              <img key={i} src={url} onClick={() => setSelectedImage(url)} 
-                  className={`h-14 w-14 object-cover rounded-lg border-2 shrink-0 ${selectedImage === url ? 'border-blue-600 scale-105' : 'border-slate-100'}`} />
+                  className={`h-14 w-14 object-cover rounded-lg border-2 shrink-0 ${selectedImage === url ? 'border-blue-600' : 'border-slate-100'}`} />
            ))}
         </div>
         <div className="h-[60px] md:hidden flex items-center justify-around px-2">
-          <ToolbarContent />
+          {['cursor', 'fill', 'erase'].map(t => (
+            <button key={t} onClick={() => setActiveTool(t)} className={`flex-1 mx-1 py-2 rounded-lg text-[10px] font-bold uppercase ${activeTool === t ? 'bg-slate-900 text-white' : 'bg-slate-50 text-slate-400'}`}>{t}</button>
+          ))}
+          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`flex-1 mx-1 py-2 rounded-lg text-[10px] font-bold uppercase ${globalShowDots ? 'bg-orange-100 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>Dots</button>
         </div>
       </footer>
     </div>
