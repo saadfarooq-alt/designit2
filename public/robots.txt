@@ -1,0 +1,6 @@
+# public/robots.txt
+User-agent: *
+Allow: /
+
+Sitemap: https://idesignits.com/sitemap.xml
+Host: https://idesignits.com

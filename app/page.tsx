@@ -293,7 +293,17 @@ export default function DesignStudio() {
           <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="md:hidden p-2 text-white bg-white/10 rounded-lg">
             <span className="text-[10px] font-black uppercase">{isMobileMenuOpen ? "Close" : "Menu"}</span>
           </button>
-          <span className="font-black text-[14px] md:text-[16px] uppercase tracking-tighter text-white ml-1">Studio v2</span>
+          {/* NEW LOGO SECTION */}
+    <div className="flex items-center ml-1 cursor-pointer" onClick={() => setActivePage("studio")}>
+      <img 
+        src="/logo.png" 
+        alt="DesignIt Logo" 
+        className="h-8 w-auto object-contain mr-2" 
+      />
+      <span className="hidden sm:inline font-black text-[16px] uppercase tracking-tighter text-white">
+        DesignIt
+      </span>
+    </div>
         </div>
 
         {/* Global Controls */}
