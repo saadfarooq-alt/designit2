@@ -20,7 +20,7 @@ interface Stroke {
   points: StrokeDot[]; 
   color: string; 
   width: number; 
-  fillColor?: string; // Added for flood-fill style
+  fillColor?: string;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 
@@ -61,8 +61,10 @@ export default function DesignStudio() {
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
+  const lastErasePos = useRef<{ x: number, y: number } | null>(null);
 
   const PEN_SPACING = 12; 
+  const ERASE_RADIUS = 30; // Size of the sweeping eraser
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -144,22 +146,20 @@ export default function DesignStudio() {
     setHistory(next);
   };
 
-  const eraseAtPoint = (clientX: number, clientY: number) => {
-    const rect = workspaceRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = clientX - rect.left;
-    const y = clientY - rect.top;
-    const radius = 25;
+  const sweepErase = (x: number, y: number) => {
+    setStrokes(prev => prev.map(st => ({
+      ...st,
+      points: st.points.filter(p => Math.hypot(p.x - x, p.y - y) > ERASE_RADIUS)
+    })).filter(st => st.points.length > 0));
 
-    setStrokes(prev => prev.filter(st => !st.points.some(p => Math.hypot(p.x - x, p.y - y) < radius)));
     setWorkspaceShapes(prev => prev.map(s => ({
       ...s,
       dots: s.dots.filter(d => {
         const dotGlobalX = s.position.x + (d.x * s.scale);
         const dotGlobalY = s.position.y + (d.y * s.scale);
-        return Math.hypot(dotGlobalX - x, dotGlobalY - y) > radius;
+        return Math.hypot(dotGlobalX - x, dotGlobalY - y) > ERASE_RADIUS;
       })
-    })));
+    })).filter(s => s.dots.length > 0));
   };
 
   const generatePathData = (dots: Dot[] | StrokeDot[], close = true) => {
@@ -232,7 +232,10 @@ export default function DesignStudio() {
             onPointerDown={(e) => {
               isPointerDownRef.current = true;
               const c = getCoords(e);
-              if (activeTool === "erase") eraseAtPoint(e.clientX, e.clientY);
+              if (activeTool === "erase") {
+                saveForUndo();
+                sweepErase(c.x, c.y);
+              }
               if (activeTool === "pen") {
                 saveForUndo();
                 const strokeId = `st-${Date.now()}`;
@@ -242,7 +245,9 @@ export default function DesignStudio() {
             }}
             onPointerMove={(e) => {
               const c = getCoords(e);
-              if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
+              if (activeTool === "erase" && isPointerDownRef.current) {
+                sweepErase(c.x, c.y);
+              }
 
               if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) {
                 const dist = Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY);
@@ -273,7 +278,6 @@ export default function DesignStudio() {
             <svg ref={workspaceRef} className="w-full h-full">
               {strokes.map(s => (
                 <g key={s.id}>
-                  {/* Fillable Path for Stroke */}
                   <path 
                     d={generatePathData(s.points, !!s.fillColor)} 
                     stroke={s.color} 
