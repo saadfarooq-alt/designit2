@@ -146,11 +146,9 @@ export default function DesignStudio() {
   };
 
   // Helper: erase pixels from a shape's raster image at workspace coordinates (x,y)
-  // Returns a Promise that resolves to the new dataURL (or null if failed)
   const erasePixelsFromShape = (shape: DistortableShape, workspaceX: number, workspaceY: number, eraseRadius = ERASE_RADIUS): Promise<string | null> => {
     return new Promise((resolve) => {
-      if (!shape.img) return resolve(null); // nothing to erase
-      // Convert workspace coords into image local coords
+      if (!shape.img) return resolve(null);
       const localX = (workspaceX - shape.position.x) / shape.scale;
       const localY = (workspaceY - shape.position.y) / shape.scale;
       const radius = eraseRadius / Math.max(1, shape.scale);
@@ -164,9 +162,7 @@ export default function DesignStudio() {
           canvas.height = shape.dims.height || img.height;
           const ctx = canvas.getContext("2d");
           if (!ctx) return resolve(null);
-          // draw existing image
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          // clear a circle at localX, localY
           ctx.globalCompositeOperation = "destination-out";
           ctx.beginPath();
           ctx.arc(localX, localY, radius, 0, Math.PI * 2);
@@ -179,23 +175,18 @@ export default function DesignStudio() {
           resolve(null);
         }
       };
-      img.onerror = () => {
-        // if the image is a dataURL or blob with CORS issues, we cannot edit it
-        resolve(null);
-      };
+      img.onerror = () => resolve(null);
       img.src = shape.img;
     });
   };
 
   // Sweep erase: removes stroke points, shape dots, AND erases image pixels inside shapes
   const sweepErase = (x: number, y: number) => {
-    // Remove stroke points near the erase point
     setStrokes(prev => prev.map(st => ({
       ...st,
       points: st.points.filter(p => Math.hypot(p.x - x, p.y - y) > ERASE_RADIUS)
     })).filter(st => st.points.length > 0));
 
-    // Remove shape dots that are within erase radius (global coords)
     setWorkspaceShapes(prev => prev.map(s => ({
       ...s,
       dots: s.dots.filter(d => {
@@ -203,35 +194,31 @@ export default function DesignStudio() {
         const dotGlobalY = s.position.y + (d.y * s.scale);
         return Math.hypot(dotGlobalX - x, dotGlobalY - y) > ERASE_RADIUS;
       })
-    })).filter(s => s.dots.length > 0));
+    })));
 
-    // For each shape with an image, attempt to erase the image pixels at that point.
+    // Erase pixels from shapes' raster images where applicable
     workspaceShapes.forEach(shape => {
-      // Quick bounding-box check to skip irrelevant shapes
       const bboxLeft = shape.position.x;
       const bboxTop = shape.position.y;
       const bboxRight = shape.position.x + shape.dims.width * shape.scale;
       const bboxBottom = shape.position.y + shape.dims.height * shape.scale;
       const margin = ERASE_RADIUS + 2;
       if (x + margin < bboxLeft || x - margin > bboxRight || y + margin < bboxTop || y - margin > bboxBottom) {
-        return; // point outside rough bounds
+        return;
       }
-
-      // Erase pixels asynchronously and update the shape.img when result available
-      erasePixelsFromShape(shape, x, y, ERASE_RADIUS).then((newDataUrl) => {
+      erasePixelsFromShape(shape, x, y, ERASE_RADIUS).then(newDataUrl => {
         if (newDataUrl) {
           setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, img: newDataUrl } : s));
         }
-      }).catch((err) => {
-        console.warn("erasePixelsFromShape failed", err);
-      });
+      }).catch(err => console.warn("erasePixelsFromShape failed", err));
     });
   };
 
-  // Proximity-based path generator (utility)
-  const generatePathData = (dots: Dot[]) => {
-    if (dots.length === 0) return "";
-    return `M ${dots[0].x} ${dots[0].y}` + dots.slice(1).map(d => ` L ${d.x} ${d.y}`).join("") + " Z";
+  // path generator (works with both Dot[] and StrokeDot[])
+  const generatePathData = (pts: { x: number; y: number }[], close = true) => {
+    if (!pts || pts.length === 0) return "";
+    const d = `M ${pts[0].x} ${pts[0].y}` + pts.slice(1).map(p => ` L ${p.x} ${p.y}`).join("");
+    return close ? d + " Z" : d;
   };
 
   useEffect(() => {
@@ -328,18 +315,28 @@ export default function DesignStudio() {
               if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y);
               if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) {
                 const dist = Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY);
-                if (dist >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s)); penRef.current.lastX = c.x; penRef.current.lastY = c.y; }
-              } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
-              } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
-              } else if (draggingShapeId && !isLocked) { setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
-              } else if (resizingId) { setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (c.rx - dragOffset.x) / 400) } : s)); setDragOffset({ x: c.rx, y: c.ry }); }
+                if (dist >= PEN_SPACING) {
+                  setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
+                  penRef.current!.lastX = c.x;
+                  penRef.current!.lastY = c.y;
+                }
+              } else if (draggingStrokeDot) {
+                setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
+              } else if (draggingDot) {
+                setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
+              } else if (draggingShapeId && !isLocked) {
+                setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
+              } else if (resizingId) {
+                setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (c.rx - dragOffset.x) / 400) } : s));
+                setDragOffset({ x: c.rx, y: c.ry });
+              }
             }}
             onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}
           >
             <svg ref={workspaceRef} className="w-full h-full">
               {strokes.map(s => (
                 <g key={s.id}>
-                  <path d={generatePathData(s.points, !!s.fillColor)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />
+                  <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />
                   {globalShowDots && s.points.map((p) => (
                     <circle key={p.id} cx={p.x} cy={p.y} r={6} fill={s.color} className="cursor-move" onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
                   ))}
