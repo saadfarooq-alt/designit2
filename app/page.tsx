@@ -29,9 +29,11 @@ export default function DesignStudio() {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Pages state
+  // App State
   const [activePage, setActivePage] = useState<"studio" | "about" | "contact">("studio");
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Canvas State
   const [templates, setTemplates] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [svgContent, setSvgContent] = useState<string | null>(null);
@@ -46,6 +48,7 @@ export default function DesignStudio() {
   const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
 
+  // Interaction State
   const [draggingDot, setDraggingDot] = useState<{ shapeId: string; dotId: string } | null>(null);
   const [draggingStrokeDot, setDraggingStrokeDot] = useState<{ strokeId: string; dotId: string } | null>(null);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
@@ -64,6 +67,7 @@ export default function DesignStudio() {
 
   useEffect(() => { setMounted(true); }, []);
 
+  // Load Templates
   useEffect(() => {
     async function load() {
       try {
@@ -176,57 +180,80 @@ export default function DesignStudio() {
     <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden select-none touch-none font-sans">
       
       {/* HEADER */}
-      <header className="h-[65px] flex items-center justify-between px-4 bg-[#800000] border-b-2 border-[#660000] shrink-0 z-[100] shadow-md">
-        <div className="flex items-center gap-4">
-          <span className="font-black text-[14px] uppercase tracking-tighter text-white">Studio v2</span>
-          <nav className="hidden md:flex gap-3 ml-4">
-            <button onClick={() => setActivePage("studio")} className={`text-[10px] font-bold uppercase transition-colors ${activePage === 'studio' ? 'text-yellow-400' : 'text-white/70 hover:text-white'}`}>Canvas</button>
-            <button onClick={() => setActivePage("about")} className={`text-[10px] font-bold uppercase transition-colors ${activePage === 'about' ? 'text-yellow-400' : 'text-white/70 hover:text-white'}`}>About</button>
-            <button onClick={() => setActivePage("contact")} className={`text-[10px] font-bold uppercase transition-colors ${activePage === 'contact' ? 'text-yellow-400' : 'text-white/70 hover:text-white'}`}>Contact</button>
+      <header className="h-[65px] flex items-center justify-between px-4 bg-[#800000] border-b-2 border-[#660000] shrink-0 z-[100] shadow-md relative">
+        <div className="flex items-center gap-2">
+          {/* Mobile Menu Toggle */}
+          <button 
+            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+            className="md:hidden p-2 text-white bg-white/10 rounded-lg active:scale-95 transition-all"
+          >
+            <span className="text-[10px] font-black uppercase">{isMobileMenuOpen ? "Close" : "Menu"}</span>
+          </button>
+
+          <span className="font-black text-[14px] md:text-[16px] uppercase tracking-tighter text-white ml-1">Studio v2</span>
+          
+          <nav className="hidden md:flex gap-4 ml-6">
+            <button onClick={() => setActivePage("studio")} className={`text-[11px] font-black uppercase transition-colors ${activePage === 'studio' ? 'text-yellow-400' : 'text-white/70 hover:text-white'}`}>Canvas</button>
+            <button onClick={() => setActivePage("about")} className={`text-[11px] font-black uppercase transition-colors ${activePage === 'about' ? 'text-yellow-400' : 'text-white/70 hover:text-white'}`}>About</button>
+            <button onClick={() => setActivePage("contact")} className={`text-[11px] font-black uppercase transition-colors ${activePage === 'contact' ? 'text-yellow-400' : 'text-white/70 hover:text-white'}`}>Contact</button>
           </nav>
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${isLocked ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white'}`}>{isLocked ? "Unlock Move" : "Lock Move"}</button>
-          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${globalShowDots ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white'}`}>{globalShowDots ? "Hide Dots" : "Show Dots"}</button>
-          <button onClick={undo} className="px-3 py-2 bg-white text-[#800000] rounded-xl text-[9px] font-bold uppercase shadow-sm active:scale-95 transition-transform">Undo</button>
-          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-600 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg active:scale-95 transition-transform">Reset</button>
+          <button onClick={undo} className="px-3 py-2 bg-white text-[#800000] rounded-xl text-[10px] font-bold uppercase shadow-sm active:scale-95 transition-transform">Undo</button>
+          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-600 text-white rounded-xl text-[10px] font-bold uppercase shadow-lg active:scale-95 transition-transform">Reset</button>
         </div>
+
+        {/* MOBILE DROPDOWN */}
+        {isMobileMenuOpen && (
+          <div className="absolute top-[65px] left-0 w-full bg-[#800000] border-b-4 border-[#660000] flex flex-col p-6 gap-6 md:hidden z-[101] shadow-2xl animate-in slide-in-from-top duration-200">
+            <div className="flex flex-col gap-4">
+              <button onClick={() => { setActivePage("studio"); setIsMobileMenuOpen(false); }} className={`text-lg font-black uppercase ${activePage === 'studio' ? 'text-yellow-400' : 'text-white'}`}>Canvas</button>
+              <button onClick={() => { setActivePage("about"); setIsMobileMenuOpen(false); }} className={`text-lg font-black uppercase ${activePage === 'about' ? 'text-yellow-400' : 'text-white'}`}>About</button>
+              <button onClick={() => { setActivePage("contact"); setIsMobileMenuOpen(false); }} className={`text-lg font-black uppercase ${activePage === 'contact' ? 'text-yellow-400' : 'text-white'}`}>Contact Us</button>
+            </div>
+            <div className="h-[1px] bg-white/10 w-full" />
+            <div className="flex flex-col gap-3">
+              <button onClick={() => { setIsLocked(!isLocked); setIsMobileMenuOpen(false); }} className={`w-full py-4 rounded-xl text-xs font-black uppercase ${isLocked ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white'}`}>{isLocked ? "Unlock Canvas" : "Lock Canvas"}</button>
+              <button onClick={() => { setGlobalShowDots(!globalShowDots); setIsMobileMenuOpen(false); }} className={`w-full py-4 rounded-xl text-xs font-black uppercase ${globalShowDots ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white'}`}>{globalShowDots ? "Hide All Dots" : "Show All Dots"}</button>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* OVERLAY PAGES */}
       {activePage !== "studio" && (
-        <div className="fixed inset-0 top-[65px] bg-slate-100 z-[90] p-6 md:p-12 overflow-y-auto animate-in slide-in-from-bottom duration-300">
-          <div className="max-w-3xl mx-auto">
-            <button onClick={() => setActivePage("studio")} className="mb-8 flex items-center gap-2 text-[#800000] font-black uppercase text-[12px]">
-              ← Back to Studio
+        <div className="fixed inset-0 top-[65px] bg-slate-100 z-[90] p-4 md:p-12 overflow-y-auto">
+          <div className="max-w-3xl mx-auto pb-20">
+            <button onClick={() => setActivePage("studio")} className="mb-6 flex items-center gap-2 text-[#800000] font-black uppercase text-[12px] hover:translate-x-[-4px] transition-transform">
+              ← Back to Drawing
             </button>
 
             {activePage === "about" ? (
-              <section className="bg-white p-8 rounded-[2rem] shadow-xl">
-                <h1 className="text-4xl font-black text-[#800000] mb-6 uppercase italic">About the Studio</h1>
-                <p className="text-slate-600 leading-relaxed mb-4">
-                  SVG Design Studio v2 is a high-performance vector manipulation tool designed for creators who want to transform static images into fluid, distortable assets.
+              <section className="bg-white p-6 md:p-10 rounded-[2.5rem] shadow-2xl border border-white">
+                <h1 className="text-4xl md:text-5xl font-black text-[#800000] mb-6 uppercase italic leading-none">The Studio</h1>
+                <p className="text-slate-600 text-lg leading-relaxed mb-8">
+                  SVG Design Studio v2 is a pro-grade vector manipulation tool built for rapid creative prototyping. We combine high-speed image tracing with intuitive shape distortion.
                 </p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
-                  <div className="bg-slate-50 p-4 rounded-xl border-l-4 border-yellow-400">
-                    <h3 className="font-black uppercase text-[12px] mb-2">Image Tracing</h3>
-                    <p className="text-[13px] text-slate-500">Powered by ImageTracerJS, we convert raster pixels into editable SVG paths instantly.</p>
+                <div className="space-y-4">
+                  <div className="p-5 bg-slate-50 rounded-2xl border-l-8 border-yellow-400">
+                    <h3 className="font-black uppercase text-sm mb-1">Advanced Tracing</h3>
+                    <p className="text-sm text-slate-500">Instantly convert any template into editable vector paths with point-sampling.</p>
                   </div>
-                  <div className="bg-slate-50 p-4 rounded-xl border-l-4 border-pink-500">
-                    <h3 className="font-black uppercase text-[12px] mb-2">Distortion Engine</h3>
-                    <p className="text-[13px] text-slate-500">Move individual anchor points to stretch, warp, and redesign shapes in real-time.</p>
+                  <div className="p-5 bg-slate-50 rounded-2xl border-l-8 border-pink-500">
+                    <h3 className="font-black uppercase text-sm mb-1">Live Distortion</h3>
+                    <p className="text-sm text-slate-500">Manipulate anchor points directly on the canvas to warp and style your designs.</p>
                   </div>
                 </div>
               </section>
             ) : (
-              <section className="bg-[#800000] text-white p-8 rounded-[2rem] shadow-xl">
-                <h1 className="text-4xl font-black mb-6 uppercase italic">Get in Touch</h1>
-                <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); alert("Message Sent!"); setActivePage("studio"); }}>
-                  <input type="text" placeholder="Your Name" className="bg-white/10 border border-white/20 p-4 rounded-xl placeholder:text-white/40 outline-none focus:bg-white/20 transition-all" required />
-                  <input type="email" placeholder="Email Address" className="bg-white/10 border border-white/20 p-4 rounded-xl placeholder:text-white/40 outline-none focus:bg-white/20 transition-all" required />
-                  <textarea placeholder="Tell us about your project..." className="bg-white/10 border border-white/20 p-4 rounded-xl h-32 placeholder:text-white/40 outline-none focus:bg-white/20 transition-all" required></textarea>
-                  <button type="submit" className="bg-yellow-400 text-[#800000] py-4 rounded-xl font-black uppercase tracking-widest hover:bg-white transition-all active:scale-95 mt-4">Send Message</button>
+              <section className="bg-[#800000] text-white p-6 md:p-10 rounded-[2.5rem] shadow-2xl">
+                <h1 className="text-4xl md:text-5xl font-black mb-6 uppercase italic leading-none">Contact Us</h1>
+                <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); alert("Message Received! We'll be in touch."); setActivePage("studio"); }}>
+                  <input type="text" placeholder="Full Name" className="bg-white/10 border border-white/20 p-5 rounded-2xl placeholder:text-white/40 outline-none focus:ring-2 ring-yellow-400 transition-all text-lg" required />
+                  <input type="email" placeholder="Email Address" className="bg-white/10 border border-white/20 p-5 rounded-2xl placeholder:text-white/40 outline-none focus:ring-2 ring-yellow-400 transition-all text-lg" required />
+                  <textarea placeholder="Tell us what you're building..." className="bg-white/10 border border-white/20 p-5 rounded-2xl h-40 placeholder:text-white/40 outline-none focus:ring-2 ring-yellow-400 transition-all text-lg resize-none" required></textarea>
+                  <button type="submit" className="bg-yellow-400 text-[#800000] py-5 rounded-2xl font-black uppercase text-lg tracking-widest hover:bg-white transition-all active:scale-95 shadow-xl">Send Message</button>
                 </form>
               </section>
             )}
@@ -234,9 +261,10 @@ export default function DesignStudio() {
         </div>
       )}
 
-      {/* MAIN STUDIO AREA */}
+      {/* WORKSPACE */}
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        <aside className="h-[35%] md:h-full w-full md:w-[350px] p-3 bg-white rounded-[2rem] shadow-xl flex flex-row gap-3 shrink-0">
+        {/* Left Toolbar/Source */}
+        <aside className="h-[30%] md:h-full w-full md:w-[320px] p-3 bg-white rounded-[2rem] shadow-xl flex flex-row gap-3 shrink-0">
           <div className="flex flex-col gap-2 w-[80px] shrink-0">
             <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
@@ -253,13 +281,13 @@ export default function DesignStudio() {
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-            }} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase shadow-md">Sample</button>
+            }} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase">Sample</button>
             <button onClick={() => {
                 saveForUndo();
                 const forceScale = imgDims.width ? 150 / imgDims.width : 1;
                 setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: forceScale, showDots: true }]);
                 setSourceDots([]);
-            }} disabled={sourceDots.length === 0} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase disabled:opacity-30 shadow-md">Add</button>
+            }} disabled={sourceDots.length === 0} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase disabled:opacity-30">Add</button>
             <button onClick={() => fileInputRef.current?.click()} className="w-full h-10 bg-black text-white rounded-lg text-[9px] font-black uppercase mt-auto">Upload</button>
             <input type="file" ref={fileInputRef} className="hidden" onChange={e => { const f = e.target.files?.[0]; if(f) setSelectedImage(URL.createObjectURL(f)); }} />
           </div>
@@ -274,8 +302,9 @@ export default function DesignStudio() {
           </div>
         </aside>
 
-        <div className="flex-1 flex flex-row gap-3 min-h-0">
-          <main className="flex-1 bg-white rounded-[2rem] border border-white shadow-xl relative overflow-hidden"
+        {/* Main Canvas + Tool Switcher */}
+        <div className="flex-1 flex flex-row gap-3 min-h-0 relative">
+          <main className="flex-1 bg-white rounded-[2rem] shadow-2xl relative overflow-hidden"
             onPointerDown={(e) => {
               isPointerDownRef.current = true;
               const c = getCoords(e);
@@ -341,24 +370,33 @@ export default function DesignStudio() {
             </svg>
           </main>
 
-          <aside className="w-[50px] md:w-[60px] h-full bg-yellow-400 rounded-[2rem] border-2 border-yellow-500 shadow-xl flex flex-col items-center py-4 gap-4 shrink-0">
-            <div className="flex flex-col gap-2 p-1 bg-yellow-500/30 rounded-2xl">
+          {/* Vertical Tool Switcher */}
+          <aside className="w-[50px] md:w-[65px] h-full bg-yellow-400 rounded-[2rem] border-2 border-yellow-500 shadow-xl flex flex-col items-center py-6 gap-6 shrink-0 z-10">
+            <div className="flex flex-col gap-3 p-1 bg-yellow-600/20 rounded-2xl">
               {(["cursor", "pen", "fill", "erase"] as const).map((tool) => (
-                <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${activeTool === tool ? 'bg-pink-500 text-white scale-105 shadow-lg font-black' : 'bg-yellow-600/20 text-black/60'}`}>
+                <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl transition-all ${activeTool === tool ? 'bg-pink-500 text-white scale-110 shadow-lg' : 'bg-transparent text-black/60 hover:bg-white/20'}`}>
                   <span className="text-[12px] font-black uppercase">{tool.charAt(0)}</span>
                 </button>
               ))}
             </div>
-            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 rounded-full border-4 border-white shadow-lg cursor-pointer mt-auto" />
+            <div className="mt-auto flex flex-col items-center gap-4">
+               {!isMobileMenuOpen && (
+                 <div className="hidden md:flex flex-col gap-2">
+                   <button onClick={() => setIsLocked(!isLocked)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-[10px] font-black transition-all ${isLocked ? 'bg-white text-[#800000]' : 'bg-yellow-700/20 text-yellow-900'}`}>{isLocked ? "L" : "U"}</button>
+                   <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`w-10 h-10 rounded-xl flex items-center justify-center text-[10px] font-black transition-all ${globalShowDots ? 'bg-white text-[#800000]' : 'bg-yellow-700/20 text-yellow-900'}`}>{globalShowDots ? "D" : "H"}</button>
+                 </div>
+               )}
+               <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 rounded-full border-4 border-white shadow-lg cursor-pointer active:scale-90 transition-transform" />
+            </div>
           </aside>
         </div>
       </div>
 
-      {/* FOOTER GALLERY */}
-      <footer className="h-[90px] px-3 pb-3 shrink-0">
-        <div className="h-full bg-black rounded-[2rem] flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
+      {/* FOOTER */}
+      <footer className="h-[100px] px-3 pb-4 shrink-0">
+        <div className="h-full bg-black/90 rounded-[2.5rem] flex items-center px-8 gap-6 overflow-x-auto no-scrollbar border border-white/10 backdrop-blur-md">
             {templates.map((url, i) => (
-              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === url ? 'border-yellow-400 scale-110' : 'border-white/20'}`} />
+              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-16 w-16 min-w-[64px] rounded-2xl object-cover cursor-pointer border-2 transition-all duration-300 ${selectedImage === url ? 'border-yellow-400 scale-110 shadow-2xl shadow-yellow-400/20' : 'border-white/10 opacity-60 hover:opacity-100 hover:scale-105'}`} />
             ))}
         </div>
       </footer>
