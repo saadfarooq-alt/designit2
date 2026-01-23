@@ -15,7 +15,7 @@ interface DistortableShape {
   fillColor?: string;
 }
 interface Stroke { id: string; points: { x: number; y: number }[]; color: string; width: number; }
-type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[]; penDots: Dot[] };
+type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 
 type Candidate = {
   id: string;
@@ -28,7 +28,6 @@ export default function DesignStudio() {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Tracing & Source State ---
   const [templates, setTemplates] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [svgContent, setSvgContent] = useState<string | null>(null);
@@ -36,22 +35,18 @@ export default function DesignStudio() {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [sourceZoom, setSourceZoom] = useState(1);
-  const [isMobile, setIsMobile] = useState(false);
 
-  // --- Workspace & Tool State ---
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
   const [activeColor, setActiveColor] = useState("#f97316");
   const [globalShowDots, setGlobalShowDots] = useState(true);
-  const [isLocked, setIsLocked] = useState(false); // NEW: Lock Move State
+  const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
 
-  // --- Interaction State ---
   const [draggingDot, setDraggingDot] = useState<{ shapeId: string; dotId: string } | null>(null);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string } | null>(null);
   
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const MAX_HISTORY = 50;
@@ -59,15 +54,8 @@ export default function DesignStudio() {
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => { 
-    setMounted(true); 
-    const checkMobile = () => setIsMobile(window.innerWidth < 768);
-    checkMobile();
-    window.addEventListener('resize', checkMobile);
-    return () => window.removeEventListener('resize', checkMobile);
-  }, []);
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     async function load() {
@@ -132,8 +120,7 @@ export default function DesignStudio() {
     setHistory(h => {
       const snapshot = { 
         shapes: JSON.parse(JSON.stringify(workspaceShapes)), 
-        strokes: JSON.parse(JSON.stringify(strokes)),
-        penDots: [] 
+        strokes: JSON.parse(JSON.stringify(strokes))
       };
       return [...h, snapshot].slice(-MAX_HISTORY);
     });
@@ -148,6 +135,24 @@ export default function DesignStudio() {
     setHistory(next);
   };
 
+  const eraseAtPoint = (clientX: number, clientY: number) => {
+    const rect = workspaceRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const radius = 25;
+
+    setStrokes(prev => prev.filter(st => !st.points.some(p => Math.hypot(p.x - x, p.y - y) < radius)));
+    setWorkspaceShapes(prev => prev.map(s => ({
+      ...s,
+      dots: s.dots.filter(d => {
+        const dotGlobalX = s.position.x + (d.x * s.scale);
+        const dotGlobalY = s.position.y + (d.y * s.scale);
+        return Math.hypot(dotGlobalX - x, dotGlobalY - y) > radius;
+      })
+    })));
+  };
+
   const generatePathData = (dots: Dot[]) => {
     if (dots.length === 0) return "";
     return `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(" ") + " Z";
@@ -158,53 +163,23 @@ export default function DesignStudio() {
     return `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ");
   };
 
-  const eraseAtPoint = (clientX: number, clientY: number) => {
-    const rect = workspaceRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const x = clientX - rect.left, y = clientY - rect.top;
-    const radius = 20;
-    setStrokes(prev => prev.filter(st => !st.points.some(p => Math.hypot(p.x - x, p.y - y) < radius)));
-    setWorkspaceShapes(prev => prev.map(s => ({
-      ...s,
-      dots: s.dots.filter(d => Math.hypot((s.position.x + d.x * s.scale) - x, (s.position.y + d.y * s.scale) - y) > radius)
-    })));
-  };
-
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-slate-200 overflow-hidden select-none touch-none" 
-      onClick={() => setContextMenu(null)}
-      onContextMenu={(e) => e.preventDefault()}
-    >
-      {/* HEADER */}
-      <header className="h-[60px] flex items-center justify-between px-4 md:px-6 bg-white border-b shrink-0 z-50">
-        <span className="font-black text-[10px] md:text-[12px] uppercase tracking-widest text-slate-900">Studio v2</span>
-        <div className="flex items-center gap-2 md:gap-3">
-          
-          {/* LOCK BUTTON */}
-          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-colors shadow-sm ${isLocked ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
-            {isLocked ? "Unlock Move" : "Lock Move"}
-          </button>
-
-          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-colors ${globalShowDots ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
-            {globalShowDots ? "Hide Dots" : "Show Dots"}
-          </button>
-
-          <input type="file" ref={fileInputRef} onChange={(e) => {
-             const file = e.target.files?.[0];
-             if (file) setSelectedImage(URL.createObjectURL(file));
-          }} className="hidden" accept="image/*" />
-          <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Upload</button>
-          <button onClick={undo} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-bold uppercase shadow-sm">Undo</button>
-          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-500 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Reset</button>
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden select-none touch-none">
+      <header className="h-[65px] flex items-center justify-between px-4 bg-yellow-400 border-b-2 border-yellow-500 shrink-0 z-50 shadow-md">
+        <span className="font-black text-[12px] uppercase tracking-widest text-black">Studio v2</span>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${isLocked ? 'bg-black text-yellow-400' : 'bg-yellow-500 text-black border border-black/10'}`}>{isLocked ? "Unlock Move" : "Lock Move"}</button>
+          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${globalShowDots ? 'bg-black text-white' : 'bg-yellow-500 text-black border border-black/10'}`}>{globalShowDots ? "Hide Dots" : "Show Dots"}</button>
+          <button onClick={undo} className="px-3 py-2 bg-white text-black rounded-xl text-[9px] font-bold uppercase shadow-sm">Undo</button>
+          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-600 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Reset</button>
         </div>
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        {/* SOURCE PANEL */}
-        <aside className="h-[38%] md:h-full w-full md:w-[380px] p-3 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row gap-3 shrink-0 overflow-hidden">
-          <div className="flex flex-col gap-2 w-[75px] md:w-[100px] shrink-0">
+        <aside className="h-[35%] md:h-full w-full md:w-[350px] p-3 bg-white rounded-[2rem] shadow-xl flex flex-row gap-3 shrink-0">
+          <div className="flex flex-col gap-2 w-[80px] shrink-0">
             <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
                 let pts: Dot[] = [];
@@ -213,154 +188,101 @@ export default function DesignStudio() {
                   path.setAttribute("d", c.d);
                   document.body.appendChild(path);
                   const len = path.getTotalLength();
-                  for (let i = 0; i <= len; i += len / 40) {
+                  for (let i = 0; i <= len; i += len / 30) {
                     const p = path.getPointAtLength(i);
                     pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y });
                   }
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-            }} className="w-full h-12 bg-slate-100 text-slate-900 rounded-xl text-[9px] font-black uppercase">Sample</button>
-            
+            }} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase shadow-md">Sample</button>
             <button onClick={() => {
                 saveForUndo();
                 const forceScale = 150 / imgDims.width;
-                setWorkspaceShapes(prev => [...prev, { 
-                  id: `s-${Date.now()}`, 
-                  img: selectedImage!, 
-                  dots: [...sourceDots], 
-                  dims: { ...imgDims }, 
-                  position: { x: 50, y: 50 }, 
-                  scale: forceScale, 
-                  showDots: true 
-                }]);
+                setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: forceScale, showDots: true }]);
                 setSourceDots([]);
-            }} disabled={sourceDots.length === 0} className="w-full h-12 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase disabled:opacity-30 shadow-md">Add</button>
-            
-            <div className="mt-auto bg-slate-50 p-2 rounded-xl flex flex-col items-center gap-1">
-                <span className="text-[8px] font-black text-slate-400">ZOOM</span>
-                <input type="range" min={0.5} max={4} step={0.1} value={sourceZoom} onChange={e => setSourceZoom(parseFloat(e.target.value))} className="w-full accent-slate-900" />
-            </div>
+            }} disabled={sourceDots.length === 0} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase disabled:opacity-30 shadow-md">Add</button>
+            <button onClick={() => fileInputRef.current?.click()} className="w-full h-10 bg-black text-white rounded-lg text-[9px] font-black uppercase mt-auto">Upload</button>
+            <input type="file" ref={fileInputRef} className="hidden" onChange={e => { const f = e.target.files?.[0]; if(f) setSelectedImage(URL.createObjectURL(f)); }} />
           </div>
-
-          <div className="flex-1 min-h-0 bg-slate-50 rounded-[1.5rem] border border-slate-200 relative overflow-hidden flex items-center justify-center shadow-inner">
-            <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full max-h-full" style={{ transform: `scale(${sourceZoom})` }}>
+          <div className="flex-1 bg-slate-50 rounded-xl relative overflow-hidden flex items-center justify-center border border-slate-200">
+            <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full">
               {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
               {candidates.map(c => (
-                <path key={c.id} d={c.d} fill={c.selected ? activeColor : "transparent"} stroke={c.selected ? "#3b82f6" : "#cbd5e1"} 
-                  strokeWidth={2} opacity={0.5} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />
+                <path key={c.id} d={c.d} fill={c.selected ? activeColor : "transparent"} stroke={c.selected ? "#3b82f6" : "#cbd5e1"} strokeWidth={2} opacity={0.5} onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />
               ))}
               {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={5} fill="#3b82f6" />)}
             </svg>
           </div>
         </aside>
 
-        {/* WORKSPACE AREA */}
         <div className="flex-1 flex flex-row gap-3 min-h-0">
-          <aside className="w-[65px] md:w-[85px] h-full bg-white rounded-[2rem] border border-white shadow-xl flex flex-col items-center py-6 gap-6 shrink-0">
-            <div className="flex flex-col gap-3 p-2 bg-slate-50 rounded-[1.5rem] shadow-inner">
+          <aside className="w-[65px] md:w-[80px] h-full bg-yellow-400 rounded-[2rem] border-2 border-yellow-500 shadow-xl flex flex-col items-center py-6 gap-6 shrink-0">
+            <div className="flex flex-col gap-3 p-2 bg-yellow-500/40 rounded-2xl shadow-inner">
               {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
-                <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl transition-all ${activeTool === tool ? 'bg-white shadow-md text-blue-600 scale-110' : 'text-slate-400'}`}>
-                  <span className="text-[12px] font-black uppercase">{tool.charAt(0)}</span>
+                <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl transition-all ${activeTool === tool ? 'bg-pink-500 text-white scale-110 shadow-lg font-black border-2 border-pink-600' : 'bg-yellow-600/20 text-black/60 hover:text-black'}`}>
+                  <span className="text-[14px] font-black uppercase">{tool.charAt(0)}</span>
                 </button>
               ))}
             </div>
             <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 rounded-full border-4 border-white shadow-lg cursor-pointer" />
           </aside>
 
-          <main className="flex-1 bg-white rounded-[2.5rem] border border-white shadow-xl relative overflow-hidden" 
+          <main className="flex-1 bg-white rounded-[2rem] border border-white shadow-xl relative overflow-hidden"
             onPointerDown={(e) => {
               isPointerDownRef.current = true;
               const c = getCoords(e);
+              if (activeTool === "erase") eraseAtPoint(e.clientX, e.clientY);
               if (activeTool === "pen") {
-                  saveForUndo();
-                  const strokeId = `st-${Date.now()}`;
-                  setStrokes(prev => [...prev, { id: strokeId, points: [{ x: c.x, y: c.y }], color: activeColor, width: 4 }]);
-                  penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId };
+                saveForUndo();
+                const strokeId = `st-${Date.now()}`;
+                setStrokes(prev => [...prev, { id: strokeId, points: [{ x: c.x, y: c.y }], color: activeColor, width: 4 }]);
+                penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId };
               }
             }}
             onPointerMove={(e) => {
               const c = getCoords(e);
               if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
               if (penRef.current && e.pointerId === penRef.current.pointerId) {
-                  setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
-                  return;
-              }
-              if (draggingDot) {
-                setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { 
-                  ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) 
-                }));
-              } else if (draggingShapeId && !isLocked) { // ONLY MOVE IF NOT LOCKED
+                setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
+              } else if (draggingDot) {
+                setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
+              } else if (draggingShapeId && !isLocked) {
                 setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
               } else if (resizingId) {
-                 const dx = c.rx - dragOffset.x;
-                 setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.01, s.scale + dx / 400) } : s));
-                 setDragOffset({ x: c.rx, y: c.ry });
+                const dx = c.rx - dragOffset.x;
+                setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + dx / 400) } : s));
+                setDragOffset({ x: c.rx, y: c.ry });
               }
-            }} 
-            onPointerUp={() => { 
-              isPointerDownRef.current = false; penRef.current = null;
-              setDraggingShapeId(null); setDraggingDot(null); setResizingId(null);
-              if (longPressTimer.current) clearTimeout(longPressTimer.current);
-            }}>
+            }}
+            onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setResizingId(null); }}>
             <svg ref={workspaceRef} className="w-full h-full">
-              {strokes.map(s => (
-                  <path key={s.id} d={strokePointsToPath(s.points)} fill="none" stroke={s.color} strokeWidth={s.width} strokeLinecap="round" strokeLinejoin="round" />
-              ))}
+              {strokes.map(s => <path key={s.id} d={strokePointsToPath(s.points)} fill="none" stroke={s.color} strokeWidth={s.width} strokeLinecap="round" />)}
               {workspaceShapes.map(shape => (
                 <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`}>
                   <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots)} /></clipPath></defs>
-                  <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`}
-                    className="touch-none"
-                    onPointerDown={(e) => {
-                      if (longPressTimer.current) clearTimeout(longPressTimer.current);
-                      longPressTimer.current = setTimeout(() => {
-                        setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id });
-                      }, 2300);
+                  <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
                       if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
-                      if (activeTool === "cursor") {
-                          e.stopPropagation(); 
-                          if (!isLocked) { // Only start drag if movement is not locked
-                            const c = getCoords(e); setDraggingShapeId(shape.id);
-                            setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
-                          }
-                      }
-                    }}
-                  />
-                  <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} pointerEvents="none" opacity={0.6} />
+                      if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
+                  }} />
+                  <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} opacity={0.5} pointerEvents="none" />
                   {globalShowDots && shape.dots.map(dot => (
-                    <circle key={dot.id} cx={dot.x} cy={dot.y} r={10 / shape.scale} fill="#3b82f6" 
-                      onPointerDown={(e) => { 
-                        if (activeTool === "cursor") { 
-                          e.stopPropagation(); // CRITICAL: Stop the image below from starting a move drag
-                          setDraggingDot({ shapeId: shape.id, dotId: dot.id }); 
-                        } 
-                      }} />
+                    <circle key={dot.id} cx={dot.x} cy={dot.y} r={10 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />
                   ))}
                   {globalShowDots && (
-                    <rect x={shape.dims.width - 15} y={shape.dims.height - 15} width={35 / shape.scale} height={35 / shape.scale} fill="#f97316" rx={4}
-                      onPointerDown={(e) => { e.stopPropagation(); saveForUndo(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
+                    <rect x={shape.dims.width - 15} y={shape.dims.height - 15} width={35 / shape.scale} height={35 / shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
                   )}
                 </g>
               ))}
             </svg>
-
-            {contextMenu && (
-              <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px]" 
-                   style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
-                <button onClick={(e) => { e.stopPropagation(); setWorkspaceShapes(prev => [...prev.filter(s => s.id !== contextMenu.id), prev.find(s => s.id === contextMenu.id)!]); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase border-b border-slate-100">Bring to Front</button>
-                <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500">Delete Unit</button>
-                <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase">Cancel</button>
-              </div>
-            )}
           </main>
         </div>
       </div>
 
-      <footer className="h-[100px] px-3 pb-3 shrink-0">
-        <div className="h-full bg-white/80 backdrop-blur-md rounded-[2.5rem] border border-white flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
+      <footer className="h-[90px] px-3 pb-3 shrink-0">
+        <div className="h-full bg-black rounded-[2rem] border border-white/10 flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
             {templates.map((url, i) => (
-              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-4 transition-all ${selectedImage === url ? 'border-blue-500 scale-105' : 'border-white opacity-50'}`} />
+              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-2 transition-all opacity-100 ${selectedImage === url ? 'border-yellow-400 scale-110' : 'border-white/20'}`} />
             ))}
         </div>
       </footer>
