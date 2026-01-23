@@ -145,12 +145,57 @@ export default function DesignStudio() {
     return { x: cx - rect.left, y: cy - rect.top, rx: cx, ry: cy };
   };
 
+  // Helper: erase pixels from a shape's raster image at workspace coordinates (x,y)
+  // Returns a Promise that resolves to the new dataURL (or null if failed)
+  const erasePixelsFromShape = (shape: DistortableShape, workspaceX: number, workspaceY: number, eraseRadius = ERASE_RADIUS): Promise<string | null> => {
+    return new Promise((resolve) => {
+      if (!shape.img) return resolve(null); // nothing to erase
+      // Convert workspace coords into image local coords
+      const localX = (workspaceX - shape.position.x) / shape.scale;
+      const localY = (workspaceY - shape.position.y) / shape.scale;
+      const radius = eraseRadius / Math.max(1, shape.scale);
+
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = shape.dims.width || img.width;
+          canvas.height = shape.dims.height || img.height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return resolve(null);
+          // draw existing image
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          // clear a circle at localX, localY
+          ctx.globalCompositeOperation = "destination-out";
+          ctx.beginPath();
+          ctx.arc(localX, localY, radius, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalCompositeOperation = "source-over";
+          const url = canvas.toDataURL();
+          resolve(url);
+        } catch (err) {
+          console.warn("erasePixelsFromShape error", err);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        // if the image is a dataURL or blob with CORS issues, we cannot edit it
+        resolve(null);
+      };
+      img.src = shape.img;
+    });
+  };
+
+  // Sweep erase: removes stroke points, shape dots, AND erases image pixels inside shapes
   const sweepErase = (x: number, y: number) => {
+    // Remove stroke points near the erase point
     setStrokes(prev => prev.map(st => ({
       ...st,
       points: st.points.filter(p => Math.hypot(p.x - x, p.y - y) > ERASE_RADIUS)
     })).filter(st => st.points.length > 0));
 
+    // Remove shape dots that are within erase radius (global coords)
     setWorkspaceShapes(prev => prev.map(s => ({
       ...s,
       dots: s.dots.filter(d => {
@@ -159,13 +204,41 @@ export default function DesignStudio() {
         return Math.hypot(dotGlobalX - x, dotGlobalY - y) > ERASE_RADIUS;
       })
     })).filter(s => s.dots.length > 0));
+
+    // For each shape with an image, attempt to erase the image pixels at that point.
+    workspaceShapes.forEach(shape => {
+      // Quick bounding-box check to skip irrelevant shapes
+      const bboxLeft = shape.position.x;
+      const bboxTop = shape.position.y;
+      const bboxRight = shape.position.x + shape.dims.width * shape.scale;
+      const bboxBottom = shape.position.y + shape.dims.height * shape.scale;
+      const margin = ERASE_RADIUS + 2;
+      if (x + margin < bboxLeft || x - margin > bboxRight || y + margin < bboxTop || y - margin > bboxBottom) {
+        return; // point outside rough bounds
+      }
+
+      // Erase pixels asynchronously and update the shape.img when result available
+      erasePixelsFromShape(shape, x, y, ERASE_RADIUS).then((newDataUrl) => {
+        if (newDataUrl) {
+          setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, img: newDataUrl } : s));
+        }
+      }).catch((err) => {
+        console.warn("erasePixelsFromShape failed", err);
+      });
+    });
   };
 
-  const generatePathData = (dots: Dot[] | StrokeDot[], close = true) => {
+  // Proximity-based path generator (utility)
+  const generatePathData = (dots: Dot[]) => {
     if (dots.length === 0) return "";
-    const d = `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(" ");
-    return close ? d + " Z" : d;
+    return `M ${dots[0].x} ${dots[0].y}` + dots.slice(1).map(d => ` L ${d.x} ${d.y}`).join("") + " Z";
   };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo]);
 
   if (!mounted) return null;
 
@@ -181,7 +254,7 @@ export default function DesignStudio() {
           <span className="font-black text-[14px] md:text-[16px] uppercase tracking-tighter text-white ml-1">Studio v2</span>
         </div>
 
-        {/* Global Controls in Header */}
+        {/* Global Controls */}
         <div className="flex items-center gap-1 md:gap-3">
           <div className="flex bg-black/20 rounded-xl p-1 gap-1">
             <button 
