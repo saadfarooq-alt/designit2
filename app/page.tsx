@@ -14,7 +14,12 @@ interface DistortableShape {
   showDots: boolean;
   fillColor?: string;
 }
-interface Stroke { id: string; points: { x: number; y: number }[]; color: string; width: number; }
+interface Stroke { 
+  id: string; 
+  points: { x: number; y: number }[]; 
+  color: string; 
+  width: number; 
+}
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 
 type Candidate = {
@@ -34,7 +39,6 @@ export default function DesignStudio() {
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
-  const [sourceZoom, setSourceZoom] = useState(1);
 
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
@@ -54,6 +58,8 @@ export default function DesignStudio() {
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
+
+  const PEN_SPACING = 8; 
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -153,26 +159,32 @@ export default function DesignStudio() {
     })));
   };
 
-  const generatePathData = (dots: Dot[]) => {
+  const generatePathData = (dots: Dot[], close = true) => {
     if (dots.length === 0) return "";
-    return `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(" ") + " Z";
+    const d = `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(" ");
+    return close ? d + " Z" : d;
   };
 
   const strokePointsToPath = (pts: { x: number; y: number }[]) => {
-    if (!pts.length) return "";
+    if (pts.length < 2) return "";
     return `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ");
   };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") { e.preventDefault(); undo(); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [history]);
 
   if (!mounted) return null;
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden select-none touch-none">
-      {/* HEADER - changed to maroon (#800000) */}
       <header className="h-[65px] flex items-center justify-between px-4 bg-[#800000] border-b-2 border-[#660000] shrink-0 z-50 shadow-md">
         <span className="font-black text-[12px] uppercase tracking-widest text-white">Studio v2</span>
         <div className="flex items-center gap-2">
-          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${isLocked ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white border border-white/10'}`}>{isLocked ? "Unlock Move" : "Lock Move"}</button>
-          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${globalShowDots ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white border border-white/10'}`}>{globalShowDots ? "Hide Dots" : "Show Dots"}</button>
+          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${isLocked ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white'}`}>{isLocked ? "Unlock Move" : "Lock Move"}</button>
+          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${globalShowDots ? 'bg-white text-[#800000]' : 'bg-[#a03a3a] text-white'}`}>{globalShowDots ? "Hide Dots" : "Show Dots"}</button>
           <button onClick={undo} className="px-3 py-2 bg-white text-[#800000] rounded-xl text-[9px] font-bold uppercase shadow-sm">Undo</button>
           <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-600 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Reset</button>
         </div>
@@ -189,7 +201,7 @@ export default function DesignStudio() {
                   path.setAttribute("d", c.d);
                   document.body.appendChild(path);
                   const len = path.getTotalLength();
-                  for (let i = 0; i <= len; i += len / 30) {
+                  for (let i = 0; i <= len; i += Math.max(3, Math.round(len / 40))) {
                     const p = path.getPointAtLength(i);
                     pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y });
                   }
@@ -200,7 +212,7 @@ export default function DesignStudio() {
             <button onClick={() => {
                 saveForUndo();
                 const forceScale = imgDims.width ? 150 / imgDims.width : 1;
-                setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: forceScale, showDots: true }]);
+                setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: forceScale, showDots: true }]);
                 setSourceDots([]);
             }} disabled={sourceDots.length === 0} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase disabled:opacity-30 shadow-md">Add</button>
             <button onClick={() => fileInputRef.current?.click()} className="w-full h-10 bg-black text-white rounded-lg text-[9px] font-black uppercase mt-auto">Upload</button>
@@ -218,7 +230,6 @@ export default function DesignStudio() {
         </aside>
 
         <div className="flex-1 flex flex-row gap-3 min-h-0">
-          {/* MAIN content first, toolbar moved to the right (after main) and made thinner */}
           <main className="flex-1 bg-white rounded-[2rem] border border-white shadow-xl relative overflow-hidden"
             onPointerDown={(e) => {
               isPointerDownRef.current = true;
@@ -234,32 +245,66 @@ export default function DesignStudio() {
             onPointerMove={(e) => {
               const c = getCoords(e);
               if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
-              if (penRef.current && e.pointerId === penRef.current.pointerId) {
-                setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
+
+              if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) {
+                const dist = Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY);
+                if (dist >= PEN_SPACING) {
+                  setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
+                  penRef.current.lastX = c.x; penRef.current.lastY = c.y;
+                }
               } else if (draggingDot) {
                 setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
               } else if (draggingShapeId && !isLocked) {
                 setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
               } else if (resizingId) {
-                const dx = c.rx - dragOffset.x;
-                setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + dx / 400) } : s));
+                setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (c.rx - dragOffset.x) / 400) } : s));
                 setDragOffset({ x: c.rx, y: c.ry });
               }
             }}
-            onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setResizingId(null); }}>
+            onPointerUp={() => {
+              isPointerDownRef.current = false;
+              penRef.current = null;
+              setDraggingShapeId(null);
+              setDraggingDot(null);
+              setResizingId(null);
+            }}
+          >
             <svg ref={workspaceRef} className="w-full h-full">
-              {strokes.map(s => <path key={s.id} d={strokePointsToPath(s.points)} fill="none" stroke={s.color} strokeWidth={s.width} strokeLinecap="round" />)}
+              {strokes.map(s => (
+                <g key={s.id}>
+                  <path d={strokePointsToPath(s.points)} stroke={s.color} strokeWidth={s.width} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  {globalShowDots && s.points.map((p, i) => (
+                    <circle key={`${s.id}-pt-${i}`} cx={p.x} cy={p.y} r={3} fill={s.color} />
+                  ))}
+                </g>
+              ))}
+
               {workspaceShapes.map(shape => (
                 <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`}>
-                  <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots)} /></clipPath></defs>
+                  <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath></defs>
+                  
                   <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
                       if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
                       if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                   }} />
-                  <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} opacity={0.5} pointerEvents="none" />
+
+                  {/* CONNECTING LINES FOR SHAPE DOTS */}
+                  {globalShowDots && (
+                    <path 
+                      d={generatePathData(shape.dots, true)} 
+                      fill={shape.fillColor || "transparent"} 
+                      stroke="#3b82f6" 
+                      strokeWidth={2 / shape.scale} 
+                      strokeDasharray={`${4/shape.scale},${4/shape.scale}`}
+                      opacity={0.7} 
+                      pointerEvents="none" 
+                    />
+                  )}
+
                   {globalShowDots && shape.dots.map(dot => (
                     <circle key={dot.id} cx={dot.x} cy={dot.y} r={10 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />
                   ))}
+
                   {globalShowDots && (
                     <rect x={shape.dims.width - 15} y={shape.dims.height - 15} width={35 / shape.scale} height={35 / shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
                   )}
@@ -268,30 +313,27 @@ export default function DesignStudio() {
             </svg>
           </main>
 
-          {/* Toolbar moved to the RIGHT and made thinner */}
-          <aside className="w-[48px] md:w-[56px] h-full bg-yellow-400 rounded-[2rem] border-2 border-yellow-500 shadow-xl flex flex-col items-center py-4 gap-4 shrink-0">
-            <div className="flex flex-col gap-2 p-1 bg-yellow-500/30 rounded-2xl shadow-inner">
+          <aside className="w-[50px] md:w-[60px] h-full bg-yellow-400 rounded-[2rem] border-2 border-yellow-500 shadow-xl flex flex-col items-center py-4 gap-4 shrink-0">
+            <div className="flex flex-col gap-2 p-1 bg-yellow-500/30 rounded-2xl">
               {(["cursor", "pen", "fill", "erase"] as const).map((tool) => (
                 <button
                   key={tool}
                   onClick={() => setActiveTool(tool)}
-                  className={`w-9 h-9 md:w-10 md:h-10 flex items-center justify-center rounded-lg transition-all ${activeTool === tool ? 'bg-pink-500 text-white scale-105 shadow-lg font-black border-2 border-pink-600' : 'bg-yellow-600/20 text-black/60 hover:text-black'}`}
-                  title={tool}
+                  className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${activeTool === tool ? 'bg-pink-500 text-white scale-105 shadow-lg font-black' : 'bg-yellow-600/20 text-black/60'}`}
                 >
                   <span className="text-[12px] font-black uppercase">{tool.charAt(0)}</span>
                 </button>
               ))}
             </div>
-
             <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 rounded-full border-4 border-white shadow-lg cursor-pointer mt-auto" />
           </aside>
         </div>
       </div>
 
       <footer className="h-[90px] px-3 pb-3 shrink-0">
-        <div className="h-full bg-black rounded-[2rem] border border-white/10 flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
+        <div className="h-full bg-black rounded-[2rem] flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
             {templates.map((url, i) => (
-              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-2 transition-all opacity-100 ${selectedImage === url ? 'border-yellow-400 scale-110' : 'border-white/20'}`} />
+              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === url ? 'border-yellow-400 scale-110' : 'border-white/20'}`} />
             ))}
         </div>
       </footer>
