@@ -14,9 +14,10 @@ interface DistortableShape {
   showDots: boolean;
   fillColor?: string;
 }
+interface StrokeDot { id: string; x: number; y: number; }
 interface Stroke { 
   id: string; 
-  points: { x: number; y: number }[]; 
+  points: StrokeDot[]; 
   color: string; 
   width: number; 
 }
@@ -48,6 +49,7 @@ export default function DesignStudio() {
   const [strokes, setStrokes] = useState<Stroke[]>([]);
 
   const [draggingDot, setDraggingDot] = useState<{ shapeId: string; dotId: string } | null>(null);
+  const [draggingStrokeDot, setDraggingStrokeDot] = useState<{ strokeId: string; dotId: string } | null>(null);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -59,7 +61,7 @@ export default function DesignStudio() {
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
 
-  const PEN_SPACING = 8; 
+  const PEN_SPACING = 12; 
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -165,7 +167,7 @@ export default function DesignStudio() {
     return close ? d + " Z" : d;
   };
 
-  const strokePointsToPath = (pts: { x: number; y: number }[]) => {
+  const strokePointsToPath = (pts: StrokeDot[]) => {
     if (pts.length < 2) return "";
     return `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ");
   };
@@ -238,7 +240,7 @@ export default function DesignStudio() {
               if (activeTool === "pen") {
                 saveForUndo();
                 const strokeId = `st-${Date.now()}`;
-                setStrokes(prev => [...prev, { id: strokeId, points: [{ x: c.x, y: c.y }], color: activeColor, width: 4 }]);
+                setStrokes(prev => [...prev, { id: strokeId, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]);
                 penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId };
               }
             }}
@@ -249,9 +251,11 @@ export default function DesignStudio() {
               if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) {
                 const dist = Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY);
                 if (dist >= PEN_SPACING) {
-                  setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
+                  setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
                   penRef.current.lastX = c.x; penRef.current.lastY = c.y;
                 }
+              } else if (draggingStrokeDot) {
+                setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
               } else if (draggingDot) {
                 setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
               } else if (draggingShapeId && !isLocked) {
@@ -266,6 +270,7 @@ export default function DesignStudio() {
               penRef.current = null;
               setDraggingShapeId(null);
               setDraggingDot(null);
+              setDraggingStrokeDot(null);
               setResizingId(null);
             }}
           >
@@ -273,8 +278,21 @@ export default function DesignStudio() {
               {strokes.map(s => (
                 <g key={s.id}>
                   <path d={strokePointsToPath(s.points)} stroke={s.color} strokeWidth={s.width} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-                  {globalShowDots && s.points.map((p, i) => (
-                    <circle key={`${s.id}-pt-${i}`} cx={p.x} cy={p.y} r={3} fill={s.color} />
+                  {globalShowDots && s.points.map((p) => (
+                    <circle 
+                      key={p.id} 
+                      cx={p.x} 
+                      cy={p.y} 
+                      r={6} 
+                      fill={s.color} 
+                      className="cursor-move"
+                      onPointerDown={(e) => {
+                        if (activeTool === "cursor") {
+                          e.stopPropagation();
+                          setDraggingStrokeDot({ strokeId: s.id, dotId: p.id });
+                        }
+                      }}
+                    />
                   ))}
                 </g>
               ))}
@@ -288,7 +306,6 @@ export default function DesignStudio() {
                       if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                   }} />
 
-                  {/* CONNECTING LINES FOR SHAPE DOTS */}
                   {globalShowDots && (
                     <path 
                       d={generatePathData(shape.dots, true)} 
