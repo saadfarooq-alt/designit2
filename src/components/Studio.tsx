@@ -28,6 +28,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Layout State
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   // Canvas & UI State
   const [templates, setTemplates] = useState<string[]>([]);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -142,18 +145,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
     return { x: cx - rect.left, y: cy - rect.top, rx: cx, ry: cy };
   };
 
-  /**
-   * ACTUAL PIXEL ERASER LOGIC
-   * Draws current image to canvas, erases at local coords, returns new DataURL
-   */
   const erasePixelsFromShape = (shape: DistortableShape, workspaceX: number, workspaceY: number): Promise<string | null> => {
     return new Promise((resolve) => {
       if (!shape.img) return resolve(null);
-      // Translate workspace coords to local image coords
       const localX = (workspaceX - shape.position.x) / shape.scale;
       const localY = (workspaceY - shape.position.y) / shape.scale;
       const radius = ERASE_RADIUS / Math.max(0.1, shape.scale);
-
       const img = new Image();
       img.crossOrigin = "anonymous";
       img.onload = () => {
@@ -162,7 +159,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
         canvas.height = shape.dims.height || img.height;
         const ctx = canvas.getContext("2d");
         if (!ctx) return resolve(null);
-
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         ctx.globalCompositeOperation = "destination-out";
         ctx.beginPath();
@@ -175,13 +171,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
   };
 
   const sweepErase = async (x: number, y: number) => {
-    // 1. Erase vector strokes
     setStrokes(prev => prev.map(st => ({
       ...st,
       points: st.points.filter(p => Math.hypot(p.x - x, p.y - y) > ERASE_RADIUS)
     })).filter(st => st.points.length > 0));
 
-    // 2. Erase vector dots (shape path)
     setWorkspaceShapes(prev => prev.map(s => ({
       ...s,
       dots: s.dots.filter(d => {
@@ -191,7 +185,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
       })
     })));
 
-    // 3. Erase actual image pixels
     const updatedShapes = await Promise.all(
       workspaceShapes.map(async (shape) => {
         const newImg = await erasePixelsFromShape(shape, x, y);
@@ -207,6 +200,38 @@ export function Studio({ onBack }: { onBack: () => void }) {
     return close ? d + " Z" : d;
   };
 
+  const handleBringToFront = (id: string, type: "shape" | "stroke") => {
+    saveForUndo();
+    if (type === "shape") {
+      setWorkspaceShapes(prev => {
+        const item = prev.find(s => s.id === id);
+        return item ? [...prev.filter(s => s.id !== id), item] : prev;
+      });
+    } else {
+      setStrokes(prev => {
+        const item = prev.find(s => s.id === id);
+        return item ? [...prev.filter(s => s.id !== id), item] : prev;
+      });
+    }
+    setContextMenu(null);
+  };
+
+  const handleSendToBack = (id: string, type: "shape" | "stroke") => {
+    saveForUndo();
+    if (type === "shape") {
+      setWorkspaceShapes(prev => {
+        const item = prev.find(s => s.id === id);
+        return item ? [item, ...prev.filter(s => s.id !== id)] : prev;
+      });
+    } else {
+      setStrokes(prev => {
+        const item = prev.find(s => s.id === id);
+        return item ? [item, ...prev.filter(s => s.id !== id)] : prev;
+      });
+    }
+    setContextMenu(null);
+  };
+
   const handleDeleteObject = (id: string, type: "shape" | "stroke") => {
     saveForUndo();
     if (type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== id));
@@ -220,34 +245,39 @@ export function Studio({ onBack }: { onBack: () => void }) {
     <div className="flex flex-col h-[100dvh] w-full bg-[#F9F9FB] text-slate-900 overflow-hidden select-none touch-none font-sans" onClick={() => setContextMenu(null)}>
       
       {/* HEADER */}
-      <header className="h-16 flex items-center justify-between px-8 bg-white/80 backdrop-blur-md border-b border-slate-200 shrink-0 z-[100]">
-        <div className="flex items-center gap-6">
-          <div className="flex items-center cursor-pointer group" onClick={onBack}>
-            <img src="/logo.png" alt="Logo" className="h-7 w-auto mr-3 transition-transform group-hover:scale-110" />
-            <div className="flex flex-col">
-              <span className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-900">DesignIt <span className="text-yellow-500">.</span></span>
-              <span className="text-[9px] font-medium uppercase tracking-[0.1em] text-slate-400">Atelier Studio</span>
-            </div>
+      <header className="h-16 flex items-center justify-between px-4 lg:px-8 bg-white/80 backdrop-blur-md border-b border-slate-200 shrink-0 z-[100]">
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setIsSidebarOpen(true)} 
+            className="lg:hidden bg-yellow-400 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase shadow-sm"
+          >
+            Trace
+          </button>
+          <div className="flex flex-col">
+            <span className="text-[11px] font-black uppercase tracking-[0.2em]">DesignIt <span className="text-yellow-500">.</span></span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={undo} className="px-5 py-2 bg-pink-50 hover:bg-pink-100 text-pink-600 rounded-full text-[10px] font-black uppercase transition-all shadow-sm border border-pink-100">Undo</button>
-          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-600 rounded-full text-[10px] font-black uppercase transition-all shadow-sm border border-emerald-100">Reset</button>
-          <div className="w-[1px] h-6 bg-slate-200 mx-2" />
-          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-5 py-2 rounded-full text-[10px] font-black uppercase transition-all border shadow-sm ${globalShowDots ? 'bg-yellow-50 border-yellow-200 text-yellow-700' : 'bg-white border-slate-200 text-slate-400'}`}>
-            {globalShowDots ? "Dots Visible" : "Dots Hidden"}
-          </button>
-          <button onClick={() => setIsLocked(!isLocked)} className={`text-[10px] font-black uppercase tracking-widest px-6 py-2 rounded-full shadow-sm transition-all border ${isLocked ? 'bg-sky-500 text-white border-sky-600' : 'bg-white text-sky-500 border-sky-100 hover:border-sky-300'}`}>
-            {isLocked ? "Locked" : "Unlocked"}
+        <div className="flex items-center gap-2">
+          <button onClick={undo} className="px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[9px] font-black uppercase">Undo</button>
+          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-4 py-2 rounded-full text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 border-yellow-200 text-yellow-700' : 'bg-white text-slate-400'}`}>
+            {globalShowDots ? "Dots" : "Hide"}
           </button>
         </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* SOURCE SIDEBAR */}
-        <aside className="w-[320px] bg-white border-r border-slate-200 flex flex-col hidden lg:flex shadow-[20px_0_40px_rgba(0,0,0,0.02)]">
-          <div className="p-6">
-            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-6">Source Tracing</h3>
+        
+        {/* RESPONSIVE SOURCE WINDOW / SIDEBAR */}
+        <aside className={`
+          fixed lg:static inset-0 lg:w-[320px] bg-white lg:border-r border-slate-200 flex flex-col z-[200] lg:z-0 transition-transform duration-300
+          ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}
+        `}>
+          <div className="p-6 shrink-0 bg-white border-b lg:border-0 border-slate-100">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Source Tracing</h3>
+              <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 p-2">CLOSE ✕</button>
+            </div>
+            
             <div className="grid grid-cols-2 gap-2 mb-3">
                <button onClick={() => {
                   const ns = "http://www.w3.org/2000/svg"; let pts: Dot[] = [];
@@ -257,68 +287,96 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     for (let i = 0; i <= len; i += Math.max(3, Math.round(len / 40))) { const p = path.getPointAtLength(i); pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y }); }
                     document.body.removeChild(path);
                   }); setSourceDots(pts);
-               }} className="bg-yellow-50 hover:bg-yellow-100 text-yellow-700 py-3 rounded-xl text-[9px] font-black uppercase transition-all border border-yellow-200">Sample</button>
+               }} className="bg-yellow-50 hover:bg-yellow-100 text-yellow-700 py-4 lg:py-3 rounded-xl text-[10px] font-black uppercase transition-all border border-yellow-200">Sample</button>
+               
                <button onClick={() => {
                   saveForUndo(); const forceScale = imgDims.width ? 150 / imgDims.width : 1;
-                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: forceScale, showDots: true }]);
+                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: forceScale, showDots: true }]);
                   setSourceDots([]);
-               }} disabled={sourceDots.length === 0} className="bg-slate-900 hover:bg-black text-yellow-400 py-3 rounded-xl text-[9px] font-black uppercase transition-all shadow-lg border border-slate-800 disabled:opacity-20">Add Design</button>
+                  setIsSidebarOpen(false); // Auto-close on add
+               }} disabled={sourceDots.length === 0} className="bg-slate-900 text-yellow-400 py-4 lg:py-3 rounded-xl text-[10px] font-black uppercase transition-all shadow-lg disabled:opacity-20">Add Design</button>
             </div>
-            <button onClick={() => fileInputRef.current?.click()} className="w-full bg-white border border-yellow-200 text-yellow-600 py-3 rounded-xl text-[9px] font-black uppercase hover:bg-yellow-50">Upload Reference</button>
+            
+            <button onClick={() => fileInputRef.current?.click()} className="w-full bg-white border border-yellow-200 text-yellow-600 py-4 lg:py-3 rounded-xl text-[10px] font-black uppercase mb-2">Upload Reference</button>
             <input type="file" ref={fileInputRef} className="hidden" onChange={e => { const f = e.target.files?.[0]; if(f) setSelectedImage(URL.createObjectURL(f)); }} />
           </div>
-          <div className="flex-1 px-6 pb-6 overflow-hidden">
-            <div className="h-full bg-slate-50 rounded-[2rem] border border-slate-200/50 relative overflow-hidden flex items-center justify-center">
-              <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-6">
+
+          {/* THE PREVIEW WINDOW - SCROLLABLE FOR MOBILE */}
+          <div className="flex-1 p-4 lg:p-6 overflow-hidden bg-slate-50 lg:bg-white">
+            <div className="h-full bg-slate-100 rounded-[2rem] border border-slate-200 relative overflow-hidden flex items-center justify-center shadow-inner">
+              <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full max-h-[60vh] lg:max-h-none p-4 lg:p-6">
                 {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
-                {candidates.map(c => <path key={c.id} d={c.d} fill={c.selected ? "rgba(250, 204, 21, 0.3)" : "transparent"} stroke={c.selected ? "#eab308" : "#cbd5e1"} strokeWidth={2} onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />)}
-                {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={5} fill="#eab308" />)}
+                {candidates.map(c => (
+                  <path 
+                    key={c.id} 
+                    d={c.d} 
+                    fill={c.selected ? "rgba(250, 204, 21, 0.4)" : "transparent"} 
+                    stroke={c.selected ? "#eab308" : "#cbd5e1"} 
+                    strokeWidth={4} // Thicker for easier mobile tapping
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x));
+                    }} 
+                  />
+                ))}
+                {sourceDots.map(s => <circle key={s.id} cx={s.x} cy={s.y} r={6} fill="#eab308" />)}
               </svg>
             </div>
           </div>
         </aside>
 
-        {/* WORKSPACE */}
-        <main className="flex-1 bg-[#F9F9FB] relative cursor-crosshair overflow-hidden" 
-          onPointerDown={(e) => { isPointerDownRef.current = true; const c = getCoords(e); if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]); penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid }; } }}
-          onPointerMove={(e) => {
-            const c = getCoords(e);
-            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y);
-            if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) {
-              if (Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY) >= PEN_SPACING) {
-                setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
-                penRef.current!.lastX = c.x; penRef.current!.lastY = c.y;
-              }
-            } else if (draggingStrokeDot) {
-              setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
-            } else if (draggingDot) {
-              setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
-            } else if (draggingShapeId && !isLocked) {
-              setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
-            } else if (resizingId) {
-              setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (c.rx - dragOffset.x) / 400) } : s));
-              setDragOffset({ x: c.rx, y: c.ry });
-            }
-          }}
-          onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}
-        >
+        {/* MAIN WORKSPACE */}
+        <main className="flex-1 bg-[#F9F9FB] relative overflow-hidden">
+          
           {/* TOOLBAR */}
-          <div className="absolute left-8 top-1/2 -translate-y-1/2 flex flex-col gap-4 p-3 bg-white/60 backdrop-blur-xl border border-white rounded-[2rem] shadow-xl z-50">
+          <div className="absolute left-2 lg:left-8 top-1/2 -translate-y-1/2 flex flex-col gap-2 lg:gap-4 p-2 lg:p-3 bg-white/70 backdrop-blur-xl border border-white rounded-[2rem] shadow-xl z-50">
              {(["cursor", "pen", "fill", "erase"] as const).map((t) => (
-                <button key={t} onClick={() => setActiveTool(t)} className={`w-12 h-12 flex items-center justify-center rounded-2xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black scale-110 shadow-xl' : 'text-slate-400 hover:bg-slate-100'}`}>
-                  <span className="text-[12px] font-black uppercase">{t.charAt(0)}</span>
+                <button key={t} onClick={() => setActiveTool(t)} className={`w-10 h-10 lg:w-12 lg:h-12 flex items-center justify-center rounded-xl lg:rounded-2xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black scale-110 shadow-lg' : 'text-slate-400'}`}>
+                  <span className="text-[10px] lg:text-[12px] font-black uppercase">{t.charAt(0)}</span>
                 </button>
              ))}
-             <div className="p-1"><input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 rounded-xl cursor-pointer" /></div>
+             <div className="p-1"><input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 lg:w-10 lg:h-10 rounded-xl cursor-pointer" /></div>
           </div>
 
-          <div className="w-full h-full flex items-center justify-center p-20">
-              <div className="w-full h-full bg-white shadow-[0_0_100px_rgba(0,0,0,0.03)] rounded-[3rem] border border-slate-100 overflow-hidden relative">
+          <div 
+            className="w-full h-full flex items-center justify-center p-4 lg:p-20"
+            onPointerDown={(e) => { 
+                isPointerDownRef.current = true; const c = getCoords(e); 
+                if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
+                if (activeTool === "pen") { 
+                    saveForUndo(); const sid = `st-${Date.now()}`; 
+                    setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]); 
+                    penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid }; 
+                } 
+            }}
+            onPointerMove={(e) => {
+              const c = getCoords(e);
+              if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y);
+              if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) {
+                if (Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY) >= PEN_SPACING) {
+                  setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
+                  penRef.current!.lastX = c.x; penRef.current!.lastY = c.y;
+                }
+              } else if (draggingStrokeDot) {
+                setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
+              } else if (draggingDot) {
+                setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
+              } else if (draggingShapeId && !isLocked) {
+                setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
+              } else if (resizingId) {
+                setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (c.rx - dragOffset.x) / 400) } : s));
+                setDragOffset({ x: c.rx, y: c.ry });
+              }
+            }}
+            onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}
+          >
+              <div className="w-full h-full bg-white shadow-xl rounded-[2.5rem] lg:rounded-[3rem] border border-slate-100 overflow-hidden relative">
                   <svg ref={workspaceRef} className="w-full h-full">
                     {strokes.map(s => (
-                      <g key={s.id}>
+                      <g key={s.id} onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                         <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />
-                        {globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={6} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}
+                        {globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={10} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}
                       </g>
                     ))}
                     {workspaceShapes.map(shape => (
@@ -329,24 +387,26 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                         }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }} />
                         {globalShowDots && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor || "transparent"} stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray={`${4/shape.scale},${4/shape.scale}`} opacity={0.7} pointerEvents="none" />}
-                        {globalShowDots && shape.dots.map(dot => <circle key={dot.id} cx={dot.x} cy={dot.y} r={10 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} /> )}
-                        {globalShowDots && <rect x={shape.dims.width - 15} y={shape.dims.height - 15} width={35 / shape.scale} height={35 / shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
+                        {globalShowDots && shape.dots.map(dot => <circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} /> )}
+                        {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45 / shape.scale} height={45 / shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
                       </g>
                     ))}
                   </svg>
               </div>
           </div>
 
-          {/* DOCK */}
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-4 p-4 bg-white/40 backdrop-blur-2xl border border-white/20 rounded-[2.5rem] shadow-xl">
-            {templates.map((u, i) => <img key={i} src={u} onClick={() => setSelectedImage(u)} className={`h-16 w-16 rounded-2xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-110' : 'border-transparent opacity-50'}`} /> )}
+          {/* TEMPLATE DOCK */}
+          <div className="absolute bottom-4 lg:bottom-10 left-1/2 -translate-x-1/2 w-[90%] lg:w-auto flex items-center gap-3 p-3 bg-white/40 backdrop-blur-2xl border border-white/20 rounded-[2rem] shadow-xl overflow-x-auto no-scrollbar">
+            {templates.map((u, i) => <img key={i} src={u} onClick={() => setSelectedImage(u)} className={`h-12 w-12 lg:h-16 lg:w-16 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-105' : 'border-transparent opacity-50'}`} /> )}
           </div>
         </main>
       </div>
 
       {contextMenu && (
-        <div className="fixed z-[200] bg-white border border-slate-200 rounded-xl shadow-2xl w-48 overflow-hidden font-bold" style={{ left: contextMenu.x, top: contextMenu.y }}>
-          <button className="w-full px-4 py-3 text-left text-[11px] uppercase hover:bg-red-50 text-red-600 transition-colors" onClick={() => handleDeleteObject(contextMenu!.id, contextMenu!.type)}>Delete Object</button>
+        <div className="fixed z-[300] bg-white border border-slate-200 rounded-xl shadow-2xl w-48 overflow-hidden font-bold" style={{ left: Math.min(contextMenu.x, window.innerWidth - 200), top: contextMenu.y }}>
+          <button className="w-full px-4 py-4 text-left text-[11px] uppercase border-b border-slate-100" onClick={() => handleBringToFront(contextMenu!.id, contextMenu!.type)}>Front</button>
+          <button className="w-full px-4 py-4 text-left text-[11px] uppercase border-b border-slate-100" onClick={() => handleSendToBack(contextMenu!.id, contextMenu!.type)}>Back</button>
+          <button className="w-full px-4 py-4 text-left text-[11px] uppercase text-red-600" onClick={() => handleDeleteObject(contextMenu!.id, contextMenu!.type)}>Delete</button>
         </div>
       )}
     </div>
