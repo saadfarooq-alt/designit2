@@ -20,6 +20,7 @@ interface Stroke {
   points: StrokeDot[]; 
   color: string; 
   width: number; 
+  fillColor?: string; // Added for flood-fill style
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 
@@ -161,15 +162,10 @@ export default function DesignStudio() {
     })));
   };
 
-  const generatePathData = (dots: Dot[], close = true) => {
+  const generatePathData = (dots: Dot[] | StrokeDot[], close = true) => {
     if (dots.length === 0) return "";
     const d = `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(" ");
     return close ? d + " Z" : d;
-  };
-
-  const strokePointsToPath = (pts: StrokeDot[]) => {
-    if (pts.length < 2) return "";
-    return `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ");
   };
 
   useEffect(() => {
@@ -277,7 +273,22 @@ export default function DesignStudio() {
             <svg ref={workspaceRef} className="w-full h-full">
               {strokes.map(s => (
                 <g key={s.id}>
-                  <path d={strokePointsToPath(s.points)} stroke={s.color} strokeWidth={s.width} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                  {/* Fillable Path for Stroke */}
+                  <path 
+                    d={generatePathData(s.points, !!s.fillColor)} 
+                    stroke={s.color} 
+                    strokeWidth={s.width} 
+                    fill={s.fillColor || "transparent"} 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    onPointerDown={(e) => {
+                      if (activeTool === "fill") {
+                        e.stopPropagation();
+                        saveForUndo();
+                        setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st));
+                      }
+                    }}
+                  />
                   {globalShowDots && s.points.map((p) => (
                     <circle 
                       key={p.id} 
