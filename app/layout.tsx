@@ -6,14 +6,25 @@ import { Analytics } from "@vercel/analytics/next";
 // app/layout.tsx
 import React from "react";
 
-
 export const metadata: Metadata = {
-  title: "Design Studio — Visual Editor",
-  description: "Design Studio v2 — trace/extract images, create vector shapes, draw, and edit designs in the browser.",
+  title: "Design Studio — Manipulate images online",
+  description:
+    "Design Studio — an intuitive web app to trace, edit and manipulate images online. Powerful image editor and design tools to create professional visuals fast — a great alternative to Adobe and Canva.",
+  keywords: [
+    "manipulate images",
+    "image editor",
+    "online design",
+    "vector trace",
+    "photo editor",
+    "graphic design",
+    "Canva alternative",
+    "Adobe alternative",
+  ],
   openGraph: {
-    title: "Design Studio — Visual Editor",
-    description: "Trace images, create vector shapes, draw, and edit designs in the browser.",
-    url: "https://idesignits.com/", // <- replace with your production URL
+    title: "Design Studio — Manipulate images online",
+    description:
+      "Trace, edit and manipulate images in the browser. Create vector shapes, apply fills, remove backgrounds and export assets — fast and simple.",
+    url: "https://idesignits.com/",
     siteName: "Design Studio",
     images: [
       {
@@ -28,16 +39,16 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Design Studio — Visual Editor",
-    description: "Trace images, create vector shapes, draw, and edit designs in the browser.",
+    title: "Design Studio — Manipulate images online",
+    description:
+      "Trace, edit and manipulate images in the browser. Create assets and export high-quality visuals — design faster than ever.",
     images: ["/og-image.png"],
   },
   robots: {
     index: true,
     follow: true,
-    // you can add more (like noimageindex) if desired
   },
-  metadataBase: new URL("https://idesignits.com/"), // <- replace with your production URL
+  metadataBase: new URL("https://idesignits.com/"),
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
@@ -50,32 +61,35 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebSite",
-    "url": "https://idesignits.com/", // <- update
-    "name": "Design Studio",
-    "description": "Design Studio v2 — trace/extract images, create vector shapes, draw, and edit designs in the browser.",
-    "publisher": {
+    url: "https://idesignits.com/",
+    name: "Design Studio",
+    description:
+      "Design Studio v2 — trace/extract images, create vector shapes, draw, and edit designs in the browser. Manipulate images online with powerful, easy-to-use tools.",
+    publisher: {
       "@type": "Organization",
-      "name": "Learncapes inc.",
-      "logo": {
+      name: "Learncapes inc.",
+      logo: {
         "@type": "ImageObject",
-        "url": "https://idesignits.com/logo.png" // <- update or remove
-      }
-    }
+        url: "https://idesignits.com/logo.png",
+      },
+    },
   };
 
   return (
     <html lang="en">
       <head>
-        {/* The Next.js metadata API will automatically inject the metadata above.
-            We add JSON-LD here for structured data. */}
+        {/* The Next.js metadata API injects the metadata above. Add structured data and canonical link */}
         <script
           type="application/ld+json"
           // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
+        <link rel="canonical" href="https://idesignits.com/" />
       </head>
-      <body>{children}</body>
-      <Analytics/>
+      <body>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
