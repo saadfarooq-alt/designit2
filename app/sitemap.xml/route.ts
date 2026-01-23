@@ -2,7 +2,7 @@
 import { NextResponse } from "next/server";
 
 export async function GET() {
-  const baseUrl = "https://example.com"; // <- change to your domain
+  const baseUrl = "https://idesignits.com"; // <- change to your domain
 
   // Add any routes/pages you want included in the sitemap
   const pages = [
