@@ -43,6 +43,7 @@ export default function DesignStudio() {
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
   const [activeColor, setActiveColor] = useState("#f97316");
   const [globalShowDots, setGlobalShowDots] = useState(true);
+  const [isLocked, setIsLocked] = useState(false); // NEW: Lock Move State
   const [strokes, setStrokes] = useState<Stroke[]>([]);
 
   // --- Interaction State ---
@@ -68,7 +69,6 @@ export default function DesignStudio() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 1. Load Templates
   useEffect(() => {
     async function load() {
       try {
@@ -79,15 +79,13 @@ export default function DesignStudio() {
           setSelectedImage(data[0]);
         }
       } catch (e) {
-        const fallbacks = ["/template1.png", "/template2.png"];
-        setTemplates(fallbacks);
-        setSelectedImage(fallbacks[0]);
+        setTemplates(["/template1.png", "/template2.png"]);
+        setSelectedImage("/template1.png");
       }
     }
     load();
   }, []);
 
-  // 2. Tracing Logic
   const runTrace = useCallback(() => {
     if (!selectedImage) return;
     const img = new Image();
@@ -122,7 +120,6 @@ export default function DesignStudio() {
     setCandidates(results);
   }, [svgContent]);
 
-  // 3. Helpers
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0, rx: 0, ry: 0 };
@@ -151,17 +148,6 @@ export default function DesignStudio() {
     setHistory(next);
   };
 
-  const bringToFront = (id: string) => {
-    saveForUndo();
-    setWorkspaceShapes(prev => {
-      const target = prev.find(s => s.id === id);
-      if (!target) return prev;
-      const rest = prev.filter(s => s.id !== id);
-      return [...rest, target];
-    });
-    setContextMenu(null);
-  };
-
   const generatePathData = (dots: Dot[]) => {
     if (dots.length === 0) return "";
     return `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(" ") + " Z";
@@ -184,14 +170,6 @@ export default function DesignStudio() {
     })));
   };
 
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setSelectedImage(url);
-    }
-  };
-
   if (!mounted) return null;
 
   return (
@@ -199,17 +177,24 @@ export default function DesignStudio() {
       onClick={() => setContextMenu(null)}
       onContextMenu={(e) => e.preventDefault()}
     >
-      
-      {/* HEADER - With Hide Dots beside Upload */}
+      {/* HEADER */}
       <header className="h-[60px] flex items-center justify-between px-4 md:px-6 bg-white border-b shrink-0 z-50">
         <span className="font-black text-[10px] md:text-[12px] uppercase tracking-widest text-slate-900">Studio v2</span>
         <div className="flex items-center gap-2 md:gap-3">
-          <input type="file" ref={fileInputRef} onChange={handleUpload} className="hidden" accept="image/*" />
           
-          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-colors ${globalShowDots ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
+          {/* LOCK BUTTON */}
+          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-colors shadow-sm ${isLocked ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-600'}`}>
+            {isLocked ? "Unlock Move" : "Lock Move"}
+          </button>
+
+          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-colors ${globalShowDots ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
             {globalShowDots ? "Hide Dots" : "Show Dots"}
           </button>
 
+          <input type="file" ref={fileInputRef} onChange={(e) => {
+             const file = e.target.files?.[0];
+             if (file) setSelectedImage(URL.createObjectURL(file));
+          }} className="hidden" accept="image/*" />
           <button onClick={() => fileInputRef.current?.click()} className="px-3 py-2 bg-slate-900 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Upload</button>
           <button onClick={undo} className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[9px] font-bold uppercase shadow-sm">Undo</button>
           <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-500 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Reset</button>
@@ -217,8 +202,7 @@ export default function DesignStudio() {
       </header>
 
       <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        
-        {/* SOURCE PANEL (38% Height on mobile) */}
+        {/* SOURCE PANEL */}
         <aside className="h-[38%] md:h-full w-full md:w-[380px] p-3 bg-white rounded-[2.5rem] border border-white shadow-xl flex flex-row gap-3 shrink-0 overflow-hidden">
           <div className="flex flex-col gap-2 w-[75px] md:w-[100px] shrink-0">
             <button onClick={() => {
@@ -240,7 +224,16 @@ export default function DesignStudio() {
             
             <button onClick={() => {
                 saveForUndo();
-                setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: 0.5, showDots: true }]);
+                const forceScale = 150 / imgDims.width;
+                setWorkspaceShapes(prev => [...prev, { 
+                  id: `s-${Date.now()}`, 
+                  img: selectedImage!, 
+                  dots: [...sourceDots], 
+                  dims: { ...imgDims }, 
+                  position: { x: 50, y: 50 }, 
+                  scale: forceScale, 
+                  showDots: true 
+                }]);
                 setSourceDots([]);
             }} disabled={sourceDots.length === 0} className="w-full h-12 bg-blue-600 text-white rounded-xl text-[9px] font-black uppercase disabled:opacity-30 shadow-md">Add</button>
             
@@ -262,7 +255,7 @@ export default function DesignStudio() {
           </div>
         </aside>
 
-        {/* WORKSPACE AREA + TOOLS ON LEFT */}
+        {/* WORKSPACE AREA */}
         <div className="flex-1 flex flex-row gap-3 min-h-0">
           <aside className="w-[65px] md:w-[85px] h-full bg-white rounded-[2rem] border border-white shadow-xl flex flex-col items-center py-6 gap-6 shrink-0">
             <div className="flex flex-col gap-3 p-2 bg-slate-50 rounded-[1.5rem] shadow-inner">
@@ -297,11 +290,11 @@ export default function DesignStudio() {
                 setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { 
                   ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) 
                 }));
-              } else if (draggingShapeId) {
+              } else if (draggingShapeId && !isLocked) { // ONLY MOVE IF NOT LOCKED
                 setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
               } else if (resizingId) {
                  const dx = c.rx - dragOffset.x;
-                 setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + dx / 400) } : s));
+                 setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.01, s.scale + dx / 400) } : s));
                  setDragOffset({ x: c.rx, y: c.ry });
               }
             }} 
@@ -326,18 +319,26 @@ export default function DesignStudio() {
                       }, 2300);
                       if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
                       if (activeTool === "cursor") {
-                          e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id);
-                          setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                          e.stopPropagation(); 
+                          if (!isLocked) { // Only start drag if movement is not locked
+                            const c = getCoords(e); setDraggingShapeId(shape.id);
+                            setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
+                          }
                       }
                     }}
                   />
                   <path d={generatePathData(shape.dots)} fill={shape.fillColor || "transparent"} pointerEvents="none" opacity={0.6} />
                   {globalShowDots && shape.dots.map(dot => (
-                    <circle key={dot.id} cx={dot.x} cy={dot.y} r={6 / shape.scale} fill="#3b82f6" 
-                      onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); } }} />
+                    <circle key={dot.id} cx={dot.x} cy={dot.y} r={10 / shape.scale} fill="#3b82f6" 
+                      onPointerDown={(e) => { 
+                        if (activeTool === "cursor") { 
+                          e.stopPropagation(); // CRITICAL: Stop the image below from starting a move drag
+                          setDraggingDot({ shapeId: shape.id, dotId: dot.id }); 
+                        } 
+                      }} />
                   ))}
                   {globalShowDots && (
-                    <rect x={shape.dims.width - 10} y={shape.dims.height - 10} width={25 / shape.scale} height={25 / shape.scale} fill="#f97316" rx={6}
+                    <rect x={shape.dims.width - 15} y={shape.dims.height - 15} width={35 / shape.scale} height={35 / shape.scale} fill="#f97316" rx={4}
                       onPointerDown={(e) => { e.stopPropagation(); saveForUndo(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
                   )}
                 </g>
@@ -347,7 +348,7 @@ export default function DesignStudio() {
             {contextMenu && (
               <div className="fixed bg-white border border-slate-200 shadow-2xl rounded-[2rem] py-3 z-[100] min-w-[200px]" 
                    style={{ left: Math.min(contextMenu.x, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 220), top: Math.min(contextMenu.y, (typeof window !== 'undefined' ? window.innerHeight : 1000) - 150) }}>
-                <button onClick={(e) => { e.stopPropagation(); bringToFront(contextMenu.id); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase border-b border-slate-100">Bring to Front</button>
+                <button onClick={(e) => { e.stopPropagation(); setWorkspaceShapes(prev => [...prev.filter(s => s.id !== contextMenu.id), prev.find(s => s.id === contextMenu.id)!]); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase border-b border-slate-100">Bring to Front</button>
                 <button onClick={(e) => { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase text-red-500">Delete Unit</button>
                 <button onClick={() => setContextMenu(null)} className="w-full text-left px-6 py-4 text-[10px] font-black uppercase">Cancel</button>
               </div>
