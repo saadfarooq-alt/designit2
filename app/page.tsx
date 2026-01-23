@@ -14,10 +14,10 @@ interface DistortableShape {
   showDots: boolean;
   fillColor?: string;
 }
-interface StrokeDot { id: string; x: number; y: number; }
+interface StrokeDot { id: string; x: number; y: string | number; }
 interface Stroke { 
   id: string; 
-  points: StrokeDot[]; 
+  points: { id: string; x: number; y: number }[]; 
   color: string; 
   width: number; 
   fillColor?: string;
@@ -64,6 +64,9 @@ export default function DesignStudio() {
 
   const PEN_SPACING = 12; 
   const ERASE_RADIUS = 30;
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string; type: "shape" | "stroke" } | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -194,10 +197,12 @@ export default function DesignStudio() {
         const dotGlobalY = s.position.y + (d.y * s.scale);
         return Math.hypot(dotGlobalX - x, dotGlobalY - y) > ERASE_RADIUS;
       })
-    })));
+    })).filter(s => s.dots.length > 0));
 
     // Erase pixels from shapes' raster images where applicable
-    workspaceShapes.forEach(shape => {
+    // Use current snapshot of shapes (not state variable inside loop) to avoid stale closure issues
+    const shapesSnapshot = workspaceShapes.slice();
+    shapesSnapshot.forEach(shape => {
       const bboxLeft = shape.position.x;
       const bboxTop = shape.position.y;
       const bboxRight = shape.position.x + shape.dims.width * shape.scale;
@@ -227,10 +232,60 @@ export default function DesignStudio() {
     return () => window.removeEventListener("keydown", onKey);
   }, [undo]);
 
+  // Context menu actions: bring to front, send to back, delete
+  const handleBringToFront = (id: string, type: "shape" | "stroke") => {
+    if (type === "shape") {
+      setWorkspaceShapes(prev => {
+        const idx = prev.findIndex(s => s.id === id);
+        if (idx === -1) return prev;
+        const item = prev[idx];
+        const others = prev.slice(0, idx).concat(prev.slice(idx + 1));
+        return [...others, item];
+      });
+    } else {
+      setStrokes(prev => {
+        const idx = prev.findIndex(s => s.id === id);
+        if (idx === -1) return prev;
+        const item = prev[idx];
+        const others = prev.slice(0, idx).concat(prev.slice(idx + 1));
+        return [...others, item];
+      });
+    }
+    setContextMenu(null);
+  };
+
+  const handleSendToBack = (id: string, type: "shape" | "stroke") => {
+    if (type === "shape") {
+      setWorkspaceShapes(prev => {
+        const idx = prev.findIndex(s => s.id === id);
+        if (idx === -1) return prev;
+        const item = prev[idx];
+        const others = prev.slice(0, idx).concat(prev.slice(idx + 1));
+        return [item, ...others];
+      });
+    } else {
+      setStrokes(prev => {
+        const idx = prev.findIndex(s => s.id === id);
+        if (idx === -1) return prev;
+        const item = prev[idx];
+        const others = prev.slice(0, idx).concat(prev.slice(idx + 1));
+        return [item, ...others];
+      });
+    }
+    setContextMenu(null);
+  };
+
+  const handleDeleteObject = (id: string, type: "shape" | "stroke") => {
+    saveForUndo();
+    if (type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== id));
+    else setStrokes(prev => prev.filter(s => s.id !== id));
+    setContextMenu(null);
+  };
+
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden select-none touch-none font-sans">
+    <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden select-none touch-none font-sans" onClick={() => setContextMenu(null)}>
       
       {/* HEADER */}
       <header className="h-[65px] flex items-center justify-between px-4 bg-[#800000] border-b-2 border-[#660000] shrink-0 z-[100] shadow-md relative">
@@ -335,7 +390,7 @@ export default function DesignStudio() {
           >
             <svg ref={workspaceRef} className="w-full h-full">
               {strokes.map(s => (
-                <g key={s.id}>
+                <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                   <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />
                   {globalShowDots && s.points.map((p) => (
                     <circle key={p.id} cx={p.x} cy={p.y} r={6} fill={s.color} className="cursor-move" onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
@@ -343,7 +398,7 @@ export default function DesignStudio() {
                 </g>
               ))}
               {workspaceShapes.map(shape => (
-                <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`}>
+                <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>
                   <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath></defs>
                   <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
                       if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
@@ -372,6 +427,18 @@ export default function DesignStudio() {
           </aside>
         </div>
       </div>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div className="fixed z-50" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <div className="bg-white border rounded-lg shadow-lg w-40">
+            <button className="w-full px-3 py-2 text-left text-[13px] hover:bg-slate-50" onClick={() => handleBringToFront(contextMenu!.id, contextMenu!.type)}>Bring to front</button>
+            <button className="w-full px-3 py-2 text-left text-[13px] hover:bg-slate-50" onClick={() => handleSendToBack(contextMenu!.id, contextMenu!.type)}>Send to back</button>
+            <button className="w-full px-3 py-2 text-left text-[13px] hover:bg-red-50 text-red-600" onClick={() => handleDeleteObject(contextMenu!.id, contextMenu!.type)}>Delete</button>
+            <button className="w-full px-3 py-2 text-left text-[13px] hover:bg-slate-50" onClick={() => setContextMenu(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
 
       {/* FOOTER - PURE BLACK */}
       <footer className="h-[100px] px-3 pb-4 shrink-0">
