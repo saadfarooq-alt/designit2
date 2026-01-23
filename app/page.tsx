@@ -14,6 +14,7 @@ interface DistortableShape {
   showDots: boolean;
   fillColor?: string;
 }
+// Updated Stroke to handle discrete dots
 interface Stroke { id: string; points: { x: number; y: number }[]; color: string; width: number; }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 
@@ -34,7 +35,6 @@ export default function DesignStudio() {
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
-  const [sourceZoom, setSourceZoom] = useState(1);
 
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
@@ -158,28 +158,29 @@ export default function DesignStudio() {
     return `M ${dots[0].x} ${dots[0].y} ` + dots.slice(1).map(d => `L ${d.x} ${d.y}`).join(" ") + " Z";
   };
 
-  const strokePointsToPath = (pts: { x: number; y: number }[]) => {
-    if (!pts.length) return "";
-    return `M ${pts[0].x} ${pts[0].y} ` + pts.slice(1).map(p => `L ${p.x} ${p.y}`).join(" ");
-  };
-
   if (!mounted) return null;
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-slate-100 overflow-hidden select-none touch-none">
-      <header className="h-[65px] flex items-center justify-between px-4 bg-yellow-400 border-b-2 border-yellow-500 shrink-0 z-50 shadow-md">
-        <span className="font-black text-[12px] uppercase tracking-widest text-black">Studio v2</span>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setIsLocked(!isLocked)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${isLocked ? 'bg-black text-yellow-400' : 'bg-yellow-500 text-black border border-black/10'}`}>{isLocked ? "Unlock Move" : "Lock Move"}</button>
-          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-3 py-2 rounded-xl text-[9px] font-black uppercase transition-all shadow-sm ${globalShowDots ? 'bg-black text-white' : 'bg-yellow-500 text-black border border-black/10'}`}>{globalShowDots ? "Hide Dots" : "Show Dots"}</button>
-          <button onClick={undo} className="px-3 py-2 bg-white text-black rounded-xl text-[9px] font-bold uppercase shadow-sm">Undo</button>
-          <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-3 py-2 bg-red-600 text-white rounded-xl text-[9px] font-bold uppercase shadow-lg">Reset</button>
+      {/* HEADER */}
+      <header className="h-[60px] flex items-center justify-between px-3 bg-red-950 border-b border-red-900 shrink-0 z-50">
+        <span className="font-black text-[12px] uppercase tracking-widest text-pink-400 hidden sm:block">Studio</span>
+        <div className="flex items-center gap-1.5 w-full sm:w-auto justify-between sm:justify-end">
+          <div className="flex gap-1">
+            <button onClick={() => setIsLocked(!isLocked)} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${isLocked ? 'bg-pink-500 text-white' : 'bg-red-900 text-pink-200 border border-white/5'}`}>{isLocked ? "Unlock" : "Lock"}</button>
+            <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${globalShowDots ? 'bg-pink-500 text-white' : 'bg-red-900 text-pink-200 border border-white/5'}`}>{globalShowDots ? "Hide" : "Show"}</button>
+          </div>
+          <div className="flex gap-1">
+            <button onClick={undo} className="px-2.5 py-1.5 bg-white text-black rounded-lg text-[10px] font-bold uppercase">Undo</button>
+            <button onClick={() => { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); }} className="px-2.5 py-1.5 bg-red-600 text-white rounded-lg text-[10px] font-bold uppercase">Reset</button>
+          </div>
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-3 gap-3">
-        <aside className="h-[35%] md:h-full w-full md:w-[350px] p-3 bg-white rounded-[2rem] shadow-xl flex flex-row gap-3 shrink-0">
-          <div className="flex flex-col gap-2 w-[80px] shrink-0">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden p-2 gap-2">
+        {/* SOURCE PANEL */}
+        <aside className="h-[30%] md:h-full w-full md:w-[280px] p-2 bg-white rounded-3xl shadow-xl flex flex-row gap-2 shrink-0">
+          <div className="flex flex-col gap-1.5 w-[65px] shrink-0">
             <button onClick={() => {
                 const ns = "http://www.w3.org/2000/svg";
                 let pts: Dot[] = [];
@@ -195,14 +196,14 @@ export default function DesignStudio() {
                   document.body.removeChild(path);
                 });
                 setSourceDots(pts);
-            }} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase shadow-md">Sample</button>
+            }} className="w-full h-8 bg-green-500 text-white border-b-2 border-green-700 rounded-md text-[8px] font-black uppercase">Sample</button>
             <button onClick={() => {
                 saveForUndo();
                 const forceScale = 150 / imgDims.width;
                 setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 50, y: 50 }, scale: forceScale, showDots: true }]);
                 setSourceDots([]);
-            }} disabled={sourceDots.length === 0} className="w-full h-10 bg-green-500 text-white border-b-4 border-green-700 rounded-lg text-[9px] font-black uppercase disabled:opacity-30 shadow-md">Add</button>
-            <button onClick={() => fileInputRef.current?.click()} className="w-full h-10 bg-black text-white rounded-lg text-[9px] font-black uppercase mt-auto">Upload</button>
+            }} disabled={sourceDots.length === 0} className="w-full h-8 bg-green-500 text-white border-b-2 border-green-700 rounded-md text-[8px] font-black uppercase disabled:opacity-30">Add</button>
+            <button onClick={() => fileInputRef.current?.click()} className="w-full h-8 bg-black text-white rounded-md text-[8px] font-black uppercase mt-auto">Up</button>
             <input type="file" ref={fileInputRef} className="hidden" onChange={e => { const f = e.target.files?.[0]; if(f) setSelectedImage(URL.createObjectURL(f)); }} />
           </div>
           <div className="flex-1 bg-slate-50 rounded-xl relative overflow-hidden flex items-center justify-center border border-slate-200">
@@ -216,19 +217,9 @@ export default function DesignStudio() {
           </div>
         </aside>
 
-        <div className="flex-1 flex flex-row gap-3 min-h-0">
-          <aside className="w-[65px] md:w-[80px] h-full bg-yellow-400 rounded-[2rem] border-2 border-yellow-500 shadow-xl flex flex-col items-center py-6 gap-6 shrink-0">
-            <div className="flex flex-col gap-3 p-2 bg-yellow-500/40 rounded-2xl shadow-inner">
-              {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
-                <button key={tool} onClick={() => setActiveTool(tool)} className={`w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-xl transition-all ${activeTool === tool ? 'bg-pink-500 text-white scale-110 shadow-lg font-black border-2 border-pink-600' : 'bg-yellow-600/20 text-black/60 hover:text-black'}`}>
-                  <span className="text-[14px] font-black uppercase">{tool.charAt(0)}</span>
-                </button>
-              ))}
-            </div>
-            <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-10 h-10 rounded-full border-4 border-white shadow-lg cursor-pointer" />
-          </aside>
-
-          <main className="flex-1 bg-white rounded-[2rem] border border-white shadow-xl relative overflow-hidden"
+        {/* WORKSPACE */}
+        <div className="flex-1 flex flex-row gap-2 min-h-0">
+          <main className="flex-1 bg-white rounded-3xl border border-white shadow-xl relative overflow-hidden"
             onPointerDown={(e) => {
               isPointerDownRef.current = true;
               const c = getCoords(e);
@@ -236,15 +227,29 @@ export default function DesignStudio() {
               if (activeTool === "pen") {
                 saveForUndo();
                 const strokeId = `st-${Date.now()}`;
-                setStrokes(prev => [...prev, { id: strokeId, points: [{ x: c.x, y: c.y }], color: activeColor, width: 4 }]);
+                // Start with the first dot
+                setStrokes(prev => [...prev, { id: strokeId, points: [{ x: c.x, y: c.y }], color: activeColor, width: 5 }]);
                 penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId };
               }
             }}
             onPointerMove={(e) => {
               const c = getCoords(e);
               if (activeTool === "erase" && isPointerDownRef.current) eraseAtPoint(e.clientX, e.clientY);
+              
               if (penRef.current && e.pointerId === penRef.current.pointerId) {
-                setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } : s));
+                // Calculate distance from last placed dot
+                const dist = Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY);
+                const spacing = 15; // DOT SPACING: Increase for more gap, decrease for denser dots
+
+                if (dist > spacing) {
+                  setStrokes(prev => prev.map(s => 
+                    s.id === penRef.current!.strokeId 
+                    ? { ...s, points: [...s.points, { x: c.x, y: c.y }] } 
+                    : s
+                  ));
+                  penRef.current.lastX = c.x;
+                  penRef.current.lastY = c.y;
+                }
               } else if (draggingDot) {
                 setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
               } else if (draggingShapeId && !isLocked) {
@@ -256,11 +261,30 @@ export default function DesignStudio() {
               }
             }}
             onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setResizingId(null); }}>
+            
+            <div className="absolute top-4 left-4 z-10 bg-black/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 pointer-events-none flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-pink-500 animate-pulse"></div>
+              <span className="text-[10px] font-black text-white uppercase tracking-tighter">
+                {activeTool === 'pen' ? 'Dotted Pen' : activeTool}
+              </span>
+            </div>
+
             <svg ref={workspaceRef} className="w-full h-full">
-              {strokes.map(s => <path key={s.id} d={strokePointsToPath(s.points)} fill="none" stroke={s.color} strokeWidth={s.width} strokeLinecap="round" />)}
+              {/* Render discrete circles for strokes instead of a single path */}
+              {strokes.map(s => (
+                <g key={s.id}>
+                  {s.points.map((p, i) => (
+                    <circle key={i} cx={p.x} cy={p.y} r={s.width / 2} fill={s.color} />
+                  ))}
+                </g>
+              ))}
+              
               {workspaceShapes.map(shape => (
                 <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`}>
                   <defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots)} /></clipPath></defs>
+                  {globalShowDots && (
+                    <path d={generatePathData(shape.dots)} fill="none" stroke="#3b82f6" strokeWidth={2/shape.scale} strokeDasharray={`${4/shape.scale} ${4/shape.scale}`} opacity={0.6} pointerEvents="none" />
+                  )}
                   <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
                       if (activeTool === "fill") { saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; }
                       if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
@@ -270,19 +294,41 @@ export default function DesignStudio() {
                     <circle key={dot.id} cx={dot.x} cy={dot.y} r={10 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />
                   ))}
                   {globalShowDots && (
-                    <rect x={shape.dims.width - 15} y={shape.dims.height - 15} width={35 / shape.scale} height={35 / shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
+                    <rect x={shape.dims.width-15} y={shape.dims.height-15} width={35/shape.scale} height={35/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />
                   )}
                 </g>
               ))}
             </svg>
           </main>
+
+          {/* TOOLBAR */}
+          <aside className="w-[45px] md:w-[50px] h-full bg-yellow-400 rounded-3xl border border-yellow-500 shadow-xl flex flex-col items-center py-5 gap-5 shrink-0">
+            <div className="flex flex-col gap-2.5">
+              {(["cursor", "pen", "fill", "erase"] as const).map(tool => (
+                <button 
+                  key={tool} 
+                  onClick={() => setActiveTool(tool)} 
+                  className={`w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded-lg transition-all ${
+                    activeTool === tool 
+                    ? 'bg-pink-500 text-white scale-110 shadow-md font-black border-2 border-pink-600' 
+                    : 'bg-yellow-600/10 text-black/40'
+                  }`}
+                >
+                  <span className="text-[12px] font-black uppercase pointer-events-none">{tool.charAt(0)}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-auto pb-4">
+              <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 rounded-full border border-white shadow-sm cursor-pointer bg-transparent" />
+            </div>
+          </aside>
         </div>
       </div>
 
-      <footer className="h-[90px] px-3 pb-3 shrink-0">
-        <div className="h-full bg-black rounded-[2rem] border border-white/10 flex items-center px-6 gap-4 overflow-x-auto no-scrollbar">
+      <footer className="h-[80px] px-2 pb-2 shrink-0">
+        <div className="h-full bg-black rounded-3xl border border-white/5 flex items-center px-4 gap-3 overflow-x-auto no-scrollbar shadow-2xl">
             {templates.map((url, i) => (
-              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-14 w-14 rounded-xl object-cover cursor-pointer border-2 transition-all opacity-100 ${selectedImage === url ? 'border-yellow-400 scale-110' : 'border-white/20'}`} />
+              <img key={i} src={url} onClick={() => setSelectedImage(url)} className={`h-12 w-12 rounded-lg object-cover cursor-pointer border-2 transition-all ${selectedImage === url ? 'border-yellow-400 scale-105 shadow-lg' : 'border-white/10 opacity-60'}`} />
             ))}
         </div>
       </footer>
