@@ -13,7 +13,7 @@ interface DistortableShape {
   scale: number;
   showDots: boolean;
   fillColor?: string;
-  erasedPaths: string[]; // added
+  erasedPaths: string[];
 }
 interface Stroke { 
   id: string; 
@@ -27,6 +27,7 @@ type Candidate = { id: string; d: string; area: number; selected: boolean; };
 
 export function Studio({ onBack }: { onBack: () => void }) {
   const [mounted, setMounted] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Layout & Tutorial State
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -57,15 +58,16 @@ export function Studio({ onBack }: { onBack: () => void }) {
   
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
+  
+  // FIXED LINES HERE
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
 
   const PEN_SPACING = 12; 
-  const ERASE_RADIUS = 30;
+  const ERASE_RADIUS = 15; 
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Tutorial logic (omitted for brevity in this snippet)...
   const tutorialSteps = [
     { text: "Select a template...", target: "template-0" },
     { text: "Open Tracing...", target: "trace-btn" },
@@ -78,7 +80,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   ];
 
   const runTutorial = async () => {
-    // tutorial code (unchanged)
     setGhostCursor({ x: window.innerWidth / 2, y: window.innerHeight / 2, active: true, clicking: false });
     for (let i = 0; i < tutorialSteps.length; i++) {
       const step = tutorialSteps[i];
@@ -183,7 +184,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
     return { x: cx - rect.left, y: cy - rect.top, rx: cx, ry: cy };
   };
 
-  // Erase logic: pen strokes & mark erasedPaths (visual holes)
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const url = event.target?.result as string;
+        setSelectedImage(url);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const sweepErase = (x: number, y: number) => {
     setStrokes(prev => prev.map(st => ({ 
       ...st, 
@@ -196,7 +208,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
       if (localX > -50 && localX < s.dims.width + 50 && localY > -50 && localY < s.dims.height + 50) {
         const r = ERASE_RADIUS / Math.max(0.001, s.scale);
-        // Build a circular path (clockwise) as a hole in image local coords
         const hole = `M ${localX - r} ${localY} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 -${r * 2} 0`;
         return { 
           ...s, 
@@ -218,7 +229,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-[#F9F9FB] text-slate-900 overflow-hidden select-none touch-none" onClick={() => setContextMenu(null)}>
-      {/* HEADER (unchanged) */}
+      
       <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-white border-b border-slate-200 shrink-0 z-[100]">
         <div className="flex items-center gap-2">
           <button id="trace-btn" onClick={() => setIsSidebarOpen(true)} className="lg:hidden bg-yellow-400 text-black px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-sm">Trace</button>
@@ -237,15 +248,22 @@ export function Studio({ onBack }: { onBack: () => void }) {
       </header>
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar omitted for brevity (unchanged) */}
         <aside className={`fixed lg:static inset-0 lg:w-[320px] bg-white lg:border-r border-slate-200 flex flex-col z-[200] lg:z-0 transition-transform ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
-          {/* ... sidebar content same as before ... */}
           <div className="p-6 shrink-0 bg-white">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-[10px] font-black uppercase text-slate-400">Source</h3>
               <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-400 text-xs">CLOSE ✕</button>
             </div>
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            
+            <div className="grid grid-cols-3 gap-2 mb-3">
+               <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-sky-50 text-sky-700 py-4 rounded-xl text-[9px] font-black uppercase border border-sky-100"
+               >
+                 Upload
+                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" />
+               </button>
+
                <button id="sample-btn" onClick={() => {
                   const ns = "http://www.w3.org/2000/svg"; let pts: Dot[] = [];
                   candidates.filter(c => c.selected).forEach(c => {
@@ -254,15 +272,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     for (let i = 0; i <= len; i += Math.max(3, Math.round(len / 40))) { const p = path.getPointAtLength(i); pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y }); }
                     document.body.removeChild(path);
                   }); setSourceDots(pts);
-               }} className="bg-yellow-50 text-yellow-700 py-4 rounded-xl text-[10px] font-black uppercase border">Sample</button>
+               }} className="bg-yellow-50 text-yellow-700 py-4 rounded-xl text-[9px] font-black uppercase border">Sample</button>
+
                <button id="add-btn" onClick={() => {
                   saveForUndo(); const fs = imgDims.width ? 150 / imgDims.width : 1;
                   setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [] }]);
                   setSourceDots([]); setIsSidebarOpen(false);
-               }} disabled={sourceDots.length === 0} className="bg-slate-900 text-yellow-400 py-4 rounded-xl text-[10px] font-black uppercase disabled:opacity-20">Add Design</button>
+               }} disabled={sourceDots.length === 0} className="bg-slate-900 text-yellow-400 py-4 rounded-xl text-[9px] font-black uppercase disabled:opacity-20">Add</button>
             </div>
           </div>
-
           <div className="flex-1 p-4 overflow-hidden">
             <div className="h-full bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative">
               <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-4">
@@ -276,7 +294,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
         </aside>
 
         <main className="flex-1 bg-[#F9F9FB] relative overflow-hidden">
-          {/* ghost cursor and contextMenu unchanged */}
           {ghostCursor.active && (
             <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
               <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
@@ -295,7 +312,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           )}
 
-          {/* TOOLBAR (unchanged) */}
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
              {(["cursor", "pen", "fill", "erase"] as const).map((t) => (
                 <button key={t} id={`${t}-tool`} onClick={() => setActiveTool(t)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400'}`}>
@@ -345,27 +361,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     {globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}
                   </g>
                 ))}
-
                 {workspaceShapes.map((shape, shapeIdx) => (
                   <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>
-                    {/* clipPath for the shape outline */}
                     <defs>
-                      <clipPath id={`cl-${shape.id}`}>
-                        <path d={generatePathData(shape.dots, true)} />
-                      </clipPath>
-
-                      {/* mask for erased areas: white = show, black = hide */}
+                      <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
                       <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}>
-                        {/* white background allows full image */}
                         <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
-                        {/* erasedPaths are drawn as black shapes to make holes */}
-                        {shape.erasedPaths && shape.erasedPaths.map((p, i) => (
-                          <path key={`er-${i}`} d={p} fill="black" />
-                        ))}
+                        {shape.erasedPaths && shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}
                       </mask>
                     </defs>
-
-                    {/* Image: apply both clipPath (outline) and mask (erased holes) */}
                     <image
                       href={shape.img}
                       width={shape.dims.width}
@@ -377,14 +381,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                         if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                       }}
                     />
-
-                    {/* Outline / fill / dots */}
                     <path d={generatePathData(shape.dots, true)} fill={shape.fillColor || "transparent"} pointerEvents="none" />
                     {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
                     {globalShowDots && shape.dots.map((dot, dotIdx) => (
                       <circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />
                     ))}
-
                     {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
                   </g>
                 ))}
