@@ -59,7 +59,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   
-  // FIXED LINES HERE
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
 
@@ -67,6 +66,43 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const ERASE_RADIUS = 15; 
 
   useEffect(() => { setMounted(true); }, []);
+
+  // --- ORDERING LOGIC ---
+  const bringToFront = (id: string, type: "shape" | "stroke") => {
+    saveForUndo();
+    if (type === "shape") {
+      setWorkspaceShapes((prev) => {
+        const item = prev.find((s) => s.id === id);
+        if (!item) return prev;
+        return [...prev.filter((s) => s.id !== id), item];
+      });
+    } else {
+      setStrokes((prev) => {
+        const item = prev.find((s) => s.id === id);
+        if (!item) return prev;
+        return [...prev.filter((s) => s.id !== id), item];
+      });
+    }
+    setContextMenu(null);
+  };
+
+  const sendToBack = (id: string, type: "shape" | "stroke") => {
+    saveForUndo();
+    if (type === "shape") {
+      setWorkspaceShapes((prev) => {
+        const item = prev.find((s) => s.id === id);
+        if (!item) return prev;
+        return [item, ...prev.filter((s) => s.id !== id)];
+      });
+    } else {
+      setStrokes((prev) => {
+        const item = prev.find((s) => s.id === id);
+        if (!item) return prev;
+        return [item, ...prev.filter((s) => s.id !== id)];
+      });
+    }
+    setContextMenu(null);
+  };
 
   const tutorialSteps = [
     { text: "Select a template...", target: "template-0" },
@@ -260,8 +296,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   onClick={() => fileInputRef.current?.click()}
                   className="bg-sky-50 text-sky-700 py-4 rounded-xl text-[9px] font-black uppercase border border-sky-100"
                >
-                 Upload
-                 <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" />
+                  Upload
+                  <input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" />
                </button>
 
                <button id="sample-btn" onClick={() => {
@@ -301,14 +337,36 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           )}
 
+          {/* UPDATED CONTEXT MENU */}
           {contextMenu && (
-            <div className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[120px]" style={{ left: contextMenu.x, top: contextMenu.y }}>
-              <button onClick={() => {
-                saveForUndo();
-                if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id));
-                else setStrokes(prev => prev.filter(s => s.id !== contextMenu.id));
-                setContextMenu(null);
-              }} className="w-full text-left px-4 py-3 text-red-500 hover:bg-red-50 text-[10px] font-black uppercase">Delete Item</button>
+            <div 
+              className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" 
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => bringToFront(contextMenu.id, contextMenu.type)}
+                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100"
+              >
+                Bring to Front
+              </button>
+              <button 
+                onClick={() => sendToBack(contextMenu.id, contextMenu.type)}
+                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100"
+              >
+                Send to Back
+              </button>
+              <button 
+                onClick={() => {
+                  saveForUndo();
+                  if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id));
+                  else setStrokes(prev => prev.filter(s => s.id !== contextMenu.id));
+                  setContextMenu(null);
+                }} 
+                className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase"
+              >
+                Delete Item
+              </button>
             </div>
           )}
 
