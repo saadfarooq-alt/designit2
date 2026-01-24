@@ -67,6 +67,19 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   useEffect(() => { setMounted(true); }, []);
 
+  const saveForUndo = useCallback(() => {
+    setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
+  }, [workspaceShapes, strokes]);
+
+  const undo = useCallback(() => {
+    if (history.length === 0) return;
+    const next = [...history];
+    const last = next.pop()!;
+    setWorkspaceShapes(last.shapes);
+    setStrokes(last.strokes);
+    setHistory(next);
+  }, [history]);
+
   // --- ORDERING LOGIC ---
   const bringToFront = (id: string, type: "shape" | "stroke") => {
     saveForUndo();
@@ -107,7 +120,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const tutorialSteps = [
     { text: "Select a template...", target: "template-0" },
     { text: "Open Tracing...", target: "trace-btn" },
-    { text: "Choose paths...", target: "path-0-0" },
+    { text: "Choose paths...", target: "trace-svg-container",  action: "choose" },
     { text: "Sample points...", target: "sample-btn" },
     { text: "Add to workspace!", target: "add-btn" },
     { text: "Select Cursor Tool", target: "cursor-tool" },
@@ -123,12 +136,34 @@ export function Studio({ onBack }: { onBack: () => void }) {
       const el = document.getElementById(step.target);
       if (el) {
         const rect = el.getBoundingClientRect();
-        const startX = rect.left + rect.width / 2;
-        const startY = rect.top + rect.height / 2;
+        let startX = rect.left + rect.width / 2;
+        let startY = rect.top + rect.height / 2;
+
+        if (step.action === "choose") {
+    // 2. Find the EXACT element at the ghost cursor's visual position
+    const targetPath = document.elementFromPoint(startX, startY);
+    
+    // 3. If we found a path, click it. Otherwise, fallback to the main element
+    if (targetPath && targetPath.tagName === 'path') {
+      targetPath.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
+    } else {
+      el.click();
+    }
+  } else {
+    // Standard click for buttons like "Add" or "Sample"
+    if (typeof (el as any).click === 'function') { 
+      (el as any).click(); 
+    } else { 
+      el.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true })); 
+    }
+  }
+
         setGhostCursor({ x: startX, y: startY, active: true, clicking: false });
         await new Promise(r => setTimeout(r, 1000));
+        
+        setGhostCursor(prev => ({ ...prev, clicking: true }));
+
         if (step.action === "drag") {
-          setGhostCursor(prev => ({ ...prev, clicking: true }));
           await new Promise(r => setTimeout(r, 200));
           setGhostCursor({ x: startX + 60, y: startY + 40, active: true, clicking: true });
           setWorkspaceShapes(prev => {
@@ -139,14 +174,16 @@ export function Studio({ onBack }: { onBack: () => void }) {
             return newShapes;
           });
           await new Promise(r => setTimeout(r, 800));
-          setGhostCursor(prev => ({ ...prev, clicking: false }));
         } else {
-          setGhostCursor(prev => ({ ...prev, clicking: true }));
-          if (typeof (el as any).click === 'function') { (el as any).click(); } 
-          else { el.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true })); }
+          // Robust click dispatch
+          if (typeof (el as any).click === 'function') { 
+            (el as any).click(); 
+          } else { 
+            el.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true })); 
+          }
           await new Promise(r => setTimeout(r, 500));
-          setGhostCursor(prev => ({ ...prev, clicking: false }));
         }
+        setGhostCursor(prev => ({ ...prev, clicking: false }));
       }
       await new Promise(r => setTimeout(r, 800));
     }
@@ -199,19 +236,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setCandidates(results);
   }, [svgContent]);
 
-  const saveForUndo = useCallback(() => {
-    setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
-  }, [workspaceShapes, strokes]);
-
-  const undo = useCallback(() => {
-    if (history.length === 0) return;
-    const next = [...history];
-    const last = next.pop()!;
-    setWorkspaceShapes(last.shapes);
-    setStrokes(last.strokes);
-    setHistory(next);
-  }, [history]);
-
   const getCoords = (e: any) => {
     const rect = workspaceRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0, rx: 0, ry: 0 };
@@ -241,7 +265,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setWorkspaceShapes(prev => prev.map(s => {
       const localX = (x - s.position.x) / s.scale;
       const localY = (y - s.position.y) / s.scale;
-
       if (localX > -50 && localX < s.dims.width + 50 && localY > -50 && localY < s.dims.height + 50) {
         const r = ERASE_RADIUS / Math.max(0.001, s.scale);
         const hole = `M ${localX - r} ${localY} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 -${r * 2} 0`;
@@ -319,10 +342,19 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
           <div className="flex-1 p-4 overflow-hidden">
             <div className="h-full bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative">
-              <svg viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-4">
+              <svg id="trace-svg-container" viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-4">
                 {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
-                {candidates.map((c) => (
-                  <path key={c.id} id={c.id} d={c.d} fill={c.selected ? "rgba(250, 204, 21, 0.4)" : "transparent"} stroke={c.selected ? "#eab308" : "#cbd5e1"} strokeWidth={4} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />
+                {candidates.map((c, idx) => (
+                  <path 
+                    key={c.id} 
+                    id={idx === 0 ? "path-0-0" : c.id} // Ensure first path has the tutorial ID
+                    d={c.d} 
+                    fill={c.selected ? "rgba(250, 204, 21, 0.4)" : "transparent"} 
+                    stroke={c.selected ? "#eab308" : "#cbd5e1"} 
+                    strokeWidth={4} 
+                    className="cursor-pointer" 
+                    onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} 
+                  />
                 ))}
               </svg>
             </div>
@@ -337,36 +369,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           )}
 
-          {/* UPDATED CONTEXT MENU */}
           {contextMenu && (
             <div 
               className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" 
               style={{ left: contextMenu.x, top: contextMenu.y }}
               onClick={(e) => e.stopPropagation()}
             >
-              <button 
-                onClick={() => bringToFront(contextMenu.id, contextMenu.type)}
-                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100"
-              >
-                Bring to Front
-              </button>
-              <button 
-                onClick={() => sendToBack(contextMenu.id, contextMenu.type)}
-                className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100"
-              >
-                Send to Back
-              </button>
-              <button 
-                onClick={() => {
-                  saveForUndo();
-                  if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id));
-                  else setStrokes(prev => prev.filter(s => s.id !== contextMenu.id));
-                  setContextMenu(null);
-                }} 
-                className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase"
-              >
-                Delete Item
-              </button>
+              <button onClick={() => bringToFront(contextMenu.id, contextMenu.type)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Bring to Front</button>
+              <button onClick={() => sendToBack(contextMenu.id, contextMenu.type)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Send to Back</button>
+              <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">Delete Item</button>
             </div>
           )}
 
