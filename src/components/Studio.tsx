@@ -118,78 +118,119 @@ export function Studio({ onBack }: { onBack: () => void }) {
   };
 
   const tutorialSteps = [
-    { text: "Select a template...", target: "template-0" },
-    { text: "Open Tracing...", target: "trace-btn" },
-    { text: "Choose paths...", target: "trace-svg-container",  action: "choose" },
-    { text: "Sample points...", target: "sample-btn" },
-    { text: "Add to workspace!", target: "add-btn" },
-    { text: "Select Cursor Tool", target: "cursor-tool" },
-    { text: "Drag a dot to reshape!", target: "workspace-dot-0", action: "drag" },
-    { text: "Color it in!", target: "fill-tool" }
-  ];
+  { text: "Select a template...", target: "template-0" },
+  { text: "Open Tracing...", target: "trace-btn" },
+  { text: "Choose paths...", target: "trace-svg-container", action: "choose" },
+  { text: "Sample points...", target: "sample-btn" },
+  { text: "Add to workspace!", target: "add-btn" },
+  /* NEW STEP */
+  { text: "Drag a dot to reshape!", target: "workspace-dot-0", action: "drag_dot" }, 
+  { text: "Select Pen Tool", target: "pen-tool" },
+  { text: "Draw something!", target: "workspace-svg", action: "draw" },
+  { text: "Change color", target: "color-picker" },
+  { text: "Select Fill Tool", target: "fill-tool" },
+  { text: "Fill the shape", target: "workspace-svg", action: "fill_shape" },
+  { text: "Select Erase Tool", target: "erase-tool" },
+  { text: "Erase part of it", target: "workspace-svg", action: "erase_action" },
+  { text: "Hide the dots", target: "dots-btn" },
+  { text: "Lock movement", target: "lock-btn" },
+  { text: "Right-click for Menu", target: "workspace-svg", action: "context_menu" },
+  { text: "Reset Canvas", target: "reset-btn" },
+  { text: "Lastly, Undo everything!", target: "undo-btn" }
+];
 
-  const runTutorial = async () => {
-    setGhostCursor({ x: window.innerWidth / 2, y: window.innerHeight / 2, active: true, clicking: false });
-    for (let i = 0; i < tutorialSteps.length; i++) {
-      const step = tutorialSteps[i];
-      setTutorialStep(i);
-      const el = document.getElementById(step.target);
-      if (el) {
-        const rect = el.getBoundingClientRect();
-        let startX = rect.left + rect.width / 2;
-        let startY = rect.top + rect.height / 2;
+ const runTutorial = async () => {
+  setGhostCursor({ x: window.innerWidth / 2, y: window.innerHeight / 2, active: true, clicking: false });
+  
+  for (let i = 0; i < tutorialSteps.length; i++) {
+    const step = tutorialSteps[i];
+    setTutorialStep(i);
+    const el = document.getElementById(step.target);
+    if (!el) continue;
 
-        if (step.action === "choose") {
-    // 2. Find the EXACT element at the ghost cursor's visual position
-    const targetPath = document.elementFromPoint(startX, startY);
-    
-    // 3. If we found a path, click it. Otherwise, fallback to the main element
-    if (targetPath && targetPath.tagName === 'path') {
-      targetPath.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true }));
-    } else {
-      el.click();
-    }
-  } else {
-    // Standard click for buttons like "Add" or "Sample"
-    if (typeof (el as any).click === 'function') { 
-      (el as any).click(); 
-    } else { 
-      el.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true })); 
-    }
-  }
+    const rect = el.getBoundingClientRect();
+    let startX = rect.left + rect.width / 2;
+    let startY = rect.top + rect.height / 2;
 
-        setGhostCursor({ x: startX, y: startY, active: true, clicking: false });
-        await new Promise(r => setTimeout(r, 1000));
-        
-        setGhostCursor(prev => ({ ...prev, clicking: true }));
+    // 1. Move to Target
+    setGhostCursor({ x: startX, y: startY, active: true, clicking: false });
+    await new Promise(r => setTimeout(r, 800));
+    setGhostCursor(prev => ({ ...prev, clicking: true }));
 
-        if (step.action === "drag") {
-          await new Promise(r => setTimeout(r, 200));
-          setGhostCursor({ x: startX + 60, y: startY + 40, active: true, clicking: true });
-          setWorkspaceShapes(prev => {
-            if (prev.length === 0) return prev;
-            const newShapes = [...prev];
-            const s = newShapes[0];
-            if (s.dots.length > 0) { s.dots[0].x += 60 / s.scale; s.dots[0].y += 40 / s.scale; }
-            return newShapes;
-          });
-          await new Promise(r => setTimeout(r, 800));
-        } else {
-          // Robust click dispatch
-          if (typeof (el as any).click === 'function') { 
-            (el as any).click(); 
-          } else { 
-            el.dispatchEvent(new MouseEvent('click', { view: window, bubbles: true, cancelable: true })); 
+    // 2. Action Logic
+    if (step.action === "drag_dot") {
+      saveForUndo(); // Save state before moving
+      const dragAmount = 60;
+      for (let j = 0; j <= 6; j++) {
+        await new Promise(r => setTimeout(r, 60));
+        const offset = (j / 6) * dragAmount;
+        setGhostCursor({ x: startX + offset, y: startY + offset, active: true, clicking: true });
+
+        setWorkspaceShapes(prev => {
+          if (prev.length === 0) return prev;
+          const newShapes = [...prev];
+          const shape = newShapes[newShapes.length - 1]; 
+          if (shape.dots.length > 0) {
+            // Update the specific dot targeted by the tutorial
+            shape.dots[0].x += (dragAmount / 6) / shape.scale;
+            shape.dots[0].y += (dragAmount / 6) / shape.scale;
           }
-          await new Promise(r => setTimeout(r, 500));
-        }
-        setGhostCursor(prev => ({ ...prev, clicking: false }));
+          return newShapes;
+        });
       }
-      await new Promise(r => setTimeout(r, 800));
+    } 
+    else if (step.action === "draw") {
+      saveForUndo();
+      const sid = `tuto-stroke`;
+      setStrokes(prev => [...prev, { id: sid, points: [{ id: 'p1', x: 200, y: 200 }], color: activeColor, width: 6 }]);
+      for(let j=0; j<10; j++) {
+        await new Promise(r => setTimeout(r, 50));
+        const newX = 200 + (j * 15);
+        const newY = 200 + (Math.sin(j) * 20);
+        // Move ghost cursor relative to the workspace SVG rect
+        setGhostCursor({ x: rect.left + newX, y: rect.top + newY, active: true, clicking: true });
+        setStrokes(p => p.map(s => s.id === sid ? { ...s, points: [...s.points, { id: `pt-${j}`, x: newX, y: newY }] } : s));
+      }
+    } 
+    else if (step.action === "fill_shape") {
+      saveForUndo();
+      // Fill the tutorial stroke we just drew
+      setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, fillColor: activeColor } : s));
     }
-    setTutorialStep(null);
-    setTimeout(() => setGhostCursor(p => ({ ...p, active: false })), 1000);
-  };
+    else if (step.action === "erase_action") {
+      saveForUndo();
+      for(let j=0; j<8; j++) {
+        const ex = 220 + (j * 12);
+        sweepErase(ex, 210);
+        setGhostCursor({ x: rect.left + ex, y: rect.top + 210, active: true, clicking: true });
+        await new Promise(r => setTimeout(r, 80));
+      }
+    }
+    else if (step.action === "context_menu") {
+      el.dispatchEvent(new MouseEvent('contextmenu', { 
+        bubbles: true, clientX: startX, clientY: startY 
+      }));
+      await new Promise(r => setTimeout(r, 1000)); // Pause to see the menu
+    }
+    else {
+      // Standard button clicks (Undo, Reset, Sample, etc.)
+      if (step.action === "choose") {
+        const targetPath = document.elementFromPoint(startX, startY);
+        if (targetPath?.tagName === 'path') targetPath.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      } else {
+        el.click();
+      }
+    }
+
+    // 3. Wrap up step
+    await new Promise(r => setTimeout(r, 700));
+    setGhostCursor(prev => ({ ...prev, clicking: false }));
+    await new Promise(r => setTimeout(r, 400));
+  }
+  
+  setTutorialStep(null);
+  setGhostCursor(p => ({ ...p, active: false }));
+};
 
   useEffect(() => {
     async function load() {
@@ -299,10 +340,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
         </div>
 
         <div className="flex items-center gap-1 sm:gap-2">
-          <button onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100">Undo</button>
-          <button onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100">Reset</button>
-          <button onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 text-yellow-700' : 'bg-white text-slate-400'}`}>Dots</button>
-          <button onClick={() => setIsLocked(!isLocked)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${isLocked ? 'bg-sky-500 text-white' : 'bg-white text-sky-500'}`}>Lock</button>
+          <button id="undo-btn" onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100">Undo</button>
+          <button id="reset-btn" onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100">Reset</button>
+          <button id="dots-btn" onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 text-yellow-700' : 'bg-white text-slate-400'}`}>Dots</button>
+          <button id="lock-btn"onClick={() => setIsLocked(!isLocked)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${isLocked ? 'bg-sky-500 text-white' : 'bg-white text-sky-500'}`}>Lock</button>
         </div>
       </header>
 
@@ -387,7 +428,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   <span className="text-[10px] font-black uppercase">{t.charAt(0)}</span>
                 </button>
              ))}
-             <input type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 rounded-lg mt-2" />
+             <input id="color-picker"type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 rounded-lg mt-2" />
           </div>
 
           <div className="w-full h-full p-4 lg:p-20" 
@@ -423,7 +464,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             }}
             onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}
           >
-              <svg ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem]">
+              <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem]">
                 {strokes.map(s => (
                   <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                     <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />
