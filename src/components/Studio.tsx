@@ -41,6 +41,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  const [ghostCursor, setGhostCursor] = useState({ x: 0, y: 0, active: false, clicking: false });
   const [showMannequinModal, setShowMannequinModal] = useState(false);
   const [showDrapeModal, setShowDrapeModal] = useState(false);
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(null);
@@ -86,12 +88,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
   const PEN_SPACING = 12; 
   const ERASE_RADIUS = 15;
 
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    workspaceShapesRef.current = workspaceShapes;
+  }, [workspaceShapes]);
 
   const saveForUndo = useCallback(() => {
     setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
@@ -212,6 +219,200 @@ export function Studio({ onBack }: { onBack: () => void }) {
     img.onerror = () => { alert('Could not load mannequin image. Make sure /public/mannequin.png exists!'); };
     img.src = mannequinImagePath;
   }, [saveForUndo]);
+
+  const tutorialSteps = [
+    { text: "Select a template...", target: "template-0" },
+    { text: "Open Tracing...", target: "trace-btn" },
+    { text: "Choose paths...", target: "trace-svg-container", action: "choose" },
+    { text: "Sample points...", target: "sample-btn" },
+    { text: "Add to workspace!", target: "add-btn" },
+    { text: "Drag a dot to reshape!", target: "workspace-dot-0", action: "drag_dot" },
+    { text: "Select Pen Tool", target: "pen-tool" },
+    { text: "Draw something!", target: "workspace-svg", action: "draw" },
+    { text: "Change color", target: "color-picker" },
+    { text: "Select Fill Tool", target: "fill-tool" },
+    { text: "Fill the shape", target: "workspace-svg", action: "fill_shape" },
+    { text: "Select Erase Tool", target: "erase-tool" },
+    { text: "Erase part of it", target: "workspace-svg", action: "erase_action" },    
+    { text: "Right-click for Menu", target: "workspace-svg", action: "context_menu" },
+    { text: "Add a Dress Form!", target: "dress-form-btn", action: "open_mannequin_modal" },
+    { text: "Adjust measurements", target: "bust-slider", action: "adjust_slider" },
+    { text: "Add to Canvas!", target: "add-mannequin-btn" },
+    { text: "Right-click garment!", target: "workspace-svg", action: "context_menu_garment" },
+    { text: "See Drape option!", target: "drape-menu-btn", action: "close_menu" },
+    { text: "Hide the dots", target: "dots-btn" },
+    { text: "Lock movement", target: "lock-btn" },
+    { text: "Reset Canvas", target: "reset-btn" },
+    { text: "Lastly, Undo everything!", target: "undo-btn" }
+  ];
+
+  const runTutorial = async () => {
+    setGhostCursor({ x: window.innerWidth / 2, y: window.innerHeight / 2, active: true, clicking: false });
+
+    for (let i = 0; i < tutorialSteps.length; i++) {
+      const step = tutorialSteps[i];
+      setTutorialStep(i);
+      const el = document.getElementById(step.target);
+      if (!el) continue;
+
+      const rect = el.getBoundingClientRect();
+      let startX = rect.left + rect.width / 2;
+      let startY = rect.top + rect.height / 2;
+
+      setGhostCursor({ x: startX, y: startY, active: true, clicking: false });
+      await new Promise(r => setTimeout(r, 800));
+      setGhostCursor(prev => ({ ...prev, clicking: true }));
+
+      if (step.action === "drag_dot") {
+        saveForUndo();
+        const dragAmount = 60;
+        
+        // Find the actual rendered dot element
+        const dotElement = document.getElementById('workspace-dot-0');
+        if (!dotElement) {
+          console.warn('No dot found for tutorial');
+          continue;
+        }
+        
+        // Get the dot's current position on screen
+        const dotRect = dotElement.getBoundingClientRect();
+        const dotScreenX = dotRect.left + dotRect.width / 2;
+        const dotScreenY = dotRect.top + dotRect.height / 2;
+        
+        // Animate dragging the dot
+        for (let j = 0; j <= 6; j++) {
+          await new Promise(r => setTimeout(r, 60));
+          const offset = (j / 6) * dragAmount;
+          setGhostCursor({ x: dotScreenX + offset, y: dotScreenY + offset, active: true, clicking: true });
+
+          setWorkspaceShapes(prev => {
+            if (prev.length === 0) return prev;
+            const newShapes = [...prev];
+            const shape = newShapes[newShapes.length - 1];
+            if (shape && shape.dots.length > 0) {
+              shape.dots[0].x += (dragAmount / 6) / shape.scale;
+              shape.dots[0].y += (dragAmount / 6) / shape.scale;
+            }
+            return newShapes;
+          });
+        }
+      }
+      else if (step.action === "draw") {
+        saveForUndo();
+        const sid = `tuto-stroke`;
+        const svgRect = workspaceRef.current?.getBoundingClientRect();
+        if (!svgRect) continue;
+        const startDrawX = 200;
+        const startDrawY = 200;
+        setStrokes(prev => [...prev, { id: sid, points: [{ id: 'p1', x: startDrawX, y: startDrawY }], color: activeColor, width: 6 }]);
+        for(let j=0; j<10; j++) {
+          await new Promise(r => setTimeout(r, 50));
+          const newX = startDrawX + (j * 15);
+          const newY = startDrawY + (Math.sin(j) * 20);
+          setGhostCursor({ x: svgRect.left + newX, y: svgRect.top + newY, active: true, clicking: true });
+          setStrokes(p => p.map(s => s.id === sid ? { ...s, points: [...s.points, { id: `pt-${j}`, x: newX, y: newY }] } : s));
+        }
+      }
+      else if (step.action === "fill_shape") {
+        saveForUndo();
+        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, fillColor: activeColor } : s));
+      }
+      else if (step.action === "erase_action") {
+        saveForUndo();
+        const svgRect = workspaceRef.current?.getBoundingClientRect();
+        if (!svgRect) continue;
+        for(let j=0; j<8; j++) {
+          const ex = 220 + (j * 12);
+          const ey = 210;
+          sweepErase(ex, ey);
+          setGhostCursor({ x: svgRect.left + ex, y: svgRect.top + ey, active: true, clicking: true });
+          await new Promise(r => setTimeout(r, 80));
+        }
+      }
+      else if (step.action === "context_menu") {
+        // Find the drawn stroke element to right-click on
+        const strokePath = workspaceRef.current?.querySelector('path[stroke]');
+        if (strokePath) {
+          const strokeRect = strokePath.getBoundingClientRect();
+          const strokeCenterX = strokeRect.left + strokeRect.width / 2;
+          const strokeCenterY = strokeRect.top + strokeRect.height / 2;
+          setGhostCursor({ x: strokeCenterX, y: strokeCenterY, active: true, clicking: false });
+          await new Promise(r => setTimeout(r, 500));
+          setGhostCursor(prev => ({ ...prev, clicking: true }));
+          strokePath.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, clientX: strokeCenterX, clientY: strokeCenterY
+          }));
+          await new Promise(r => setTimeout(r, 1000));
+        }
+      }
+      else if (step.action === "open_mannequin_modal") {
+        el.click();
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      else if (step.action === "adjust_slider") {
+        const slider = document.getElementById('bust-slider') as HTMLInputElement;
+        if (slider) {
+          const startValue = parseInt(slider.value);
+          const endValue = 105;
+          for (let j = 0; j <= 10; j++) {
+            await new Promise(r => setTimeout(r, 80));
+            const newValue = Math.round(startValue + ((endValue - startValue) * (j / 10)));
+            slider.value = newValue.toString();
+            slider.dispatchEvent(new Event('input', { bubbles: true }));
+            slider.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }
+      }
+      else if (step.action === "context_menu_garment") {
+        // Right-click on the FIRST image (the template that was added, not the mannequin)
+        setContextMenu(null);
+        await new Promise(r => setTimeout(r, 300));
+        
+        // Get the very first shape in the workspace (the traced template)
+        const currentShapes = workspaceShapesRef.current;
+        if (currentShapes.length > 0 && !currentShapes[0].isMannequin) {
+          const garment = currentShapes[0];
+          // Calculate center of garment
+          const garmentCenterX = garment.position.x + (garment.dims.width * garment.scale) / 2;
+          const garmentCenterY = garment.position.y + (garment.dims.height * garment.scale) / 2;
+          
+          const svgRect = workspaceRef.current?.getBoundingClientRect();
+          if (svgRect) {
+            const screenX = svgRect.left + garmentCenterX;
+            const screenY = svgRect.top + garmentCenterY;
+            
+            setGhostCursor({ x: screenX, y: screenY, active: true, clicking: false });
+            await new Promise(r => setTimeout(r, 500));
+            setGhostCursor(prev => ({ ...prev, clicking: true }));
+            
+            // Trigger context menu
+            setContextMenu({ x: screenX, y: screenY, id: garment.id, type: "shape" });
+            await new Promise(r => setTimeout(r, 1000));
+          }
+        }
+      }
+      else if (step.action === "close_menu") {
+        // Just close the context menu without clicking drape
+        await new Promise(r => setTimeout(r, 800));
+        setContextMenu(null);
+      }
+      else {
+        if (step.action === "choose") {
+          const targetPath = document.elementFromPoint(startX, startY);
+          if (targetPath?.tagName === 'path') targetPath.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        } else {
+          el.click();
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 700));
+      setGhostCursor(prev => ({ ...prev, clicking: false }));
+      await new Promise(r => setTimeout(r, 400));
+    }
+
+    setTutorialStep(null);
+    setGhostCursor(p => ({ ...p, active: false }));
+  };
 
   const bringToFront = (id: string, type: "shape" | "stroke") => {
     saveForUndo();
@@ -362,7 +563,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             
             <div className="flex gap-3">
               <button onClick={() => setShowDrapeModal(false)} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl text-sm font-bold uppercase hover:bg-slate-200 transition-colors">Cancel</button>
-              <button onClick={startManualShoulderSelection} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-sm font-bold uppercase hover:shadow-lg transition-all">Start Draping</button>
+              <button id="start-draping-btn" onClick={startManualShoulderSelection} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-sm font-bold uppercase hover:shadow-lg transition-all">Start Draping</button>
             </div>
           </div>
         </div>
@@ -378,7 +579,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               <button onClick={() => setShowMannequinModal(false)} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
             </div>
             <div className="space-y-4">
-              <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-2">Bust / Chest<span className="ml-2 text-pink-500 font-bold">{measurements.bust} cm</span></label><input type="range" min="70" max="130" value={measurements.bust} onChange={(e) => setMeasurements(prev => ({ ...prev, bust: parseInt(e.target.value) }))} className="w-full h-2 bg-pink-100 rounded-lg appearance-none cursor-pointer accent-pink-500" /></div>
+              <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-2">Bust / Chest<span className="ml-2 text-pink-500 font-bold">{measurements.bust} cm</span></label><input id="bust-slider" type="range" min="70" max="130" value={measurements.bust} onChange={(e) => setMeasurements(prev => ({ ...prev, bust: parseInt(e.target.value) }))} className="w-full h-2 bg-pink-100 rounded-lg appearance-none cursor-pointer accent-pink-500" /></div>
               <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-2">Under-Bust<span className="ml-2 text-purple-500 font-bold">{measurements.underBust} cm</span></label><input type="range" min="60" max="110" value={measurements.underBust} onChange={(e) => setMeasurements(prev => ({ ...prev, underBust: parseInt(e.target.value) }))} className="w-full h-2 bg-purple-100 rounded-lg appearance-none cursor-pointer accent-purple-500" /></div>
               <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-2">Waist<span className="ml-2 text-yellow-600 font-bold">{measurements.waist} cm</span></label><input type="range" min="55" max="110" value={measurements.waist} onChange={(e) => setMeasurements(prev => ({ ...prev, waist: parseInt(e.target.value) }))} className="w-full h-2 bg-yellow-100 rounded-lg appearance-none cursor-pointer accent-yellow-500" /></div>
               <div><label className="block text-[10px] font-black uppercase text-slate-600 mb-2">Hips<span className="ml-2 text-blue-500 font-bold">{measurements.hips} cm</span></label><input type="range" min="75" max="140" value={measurements.hips} onChange={(e) => setMeasurements(prev => ({ ...prev, hips: parseInt(e.target.value) }))} className="w-full h-2 bg-blue-100 rounded-lg appearance-none cursor-pointer accent-blue-500" /></div>
@@ -388,7 +589,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
             <div className="mt-8 flex gap-3">
               <button onClick={() => setShowMannequinModal(false)} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 transition-colors">Cancel</button>
-              <button onClick={() => createMannequinWithMeasurements(measurements)} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:shadow-lg transition-all">Add to Canvas</button>
+              <button id="add-mannequin-btn" onClick={() => createMannequinWithMeasurements(measurements)} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-[10px] font-black uppercase hover:shadow-lg transition-all">Add to Canvas</button>
             </div>
           </div>
         </div>
@@ -402,7 +603,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
-          <button onClick={() => setShowMannequinModal(true)} className="px-2 sm:px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1">
+          <button id="dress-form-btn" onClick={() => setShowMannequinModal(true)} className="px-2 sm:px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1">
             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z"/></svg>
             <span className="hidden sm:inline">Dress Form</span>
           </button>
@@ -435,12 +636,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
         </aside>
         <main className="flex-1 bg-[#F9F9FB] relative overflow-hidden">
+          {ghostCursor.active && (
+            <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
+              <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
+              {tutorialStep !== null && <div className="mt-2 bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded-lg shadow-xl">{tutorialSteps[tutorialStep].text}</div>}
+            </div>
+          )}
           {contextMenu && (
             <div className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
               <button onClick={() => bringToFront(contextMenu.id, contextMenu.type)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Bring to Front</button>
               <button onClick={() => sendToBack(contextMenu.id, contextMenu.type)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Send to Back</button>
               {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
-                <button onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
+                <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
                   🎀 Drape to Mannequin
                 </button>
               )}
@@ -617,6 +824,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] lg:w-auto flex items-center gap-3 p-3 bg-white/40 backdrop-blur-xl rounded-[2rem] shadow-xl overflow-x-auto">
             {templates.map((u, i) => <img key={i} id={`template-${i}`} src={u} onClick={() => setSelectedImage(u)} className={`h-12 w-12 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-105' : 'border-transparent opacity-50'}`} /> )}
           </div>
+          <button onClick={runTutorial} className="fixed bottom-6 right-6 w-12 h-12 bg-slate-900 text-yellow-400 rounded-full font-black shadow-2xl border-2 border-yellow-400">?</button>
         </main>
       </div>
     </div>
