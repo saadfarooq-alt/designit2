@@ -50,13 +50,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [armpitMeasurement, setArmpitMeasurement] = useState(20);
   const [garmentLength, setGarmentLength] = useState(25);
   const [measurements, setMeasurements] = useState<MannequinMeasurements>({
-    bust: 92,
-    underBust: 78,
-    waist: 68,
-    hips: 98,
-    torsoLength: 45,
-    shoulderWidth: 38,
-    neckCircumference: 34
+    bust: 111,
+    underBust: 98,
+    waist: 97,
+    hips: 134,
+    torsoLength: 51,
+    shoulderWidth: 42,
+    neckCircumference: 39
   });
   
   // STATE FOR 4 NECK CLICKS
@@ -118,32 +118,123 @@ export function Studio({ onBack }: { onBack: () => void }) {
     const garment = workspaceShapes.find(s => s.id === garmentId);
     if (garment && !garment.isMannequin) {
       setSelectedGarmentId(garmentId);
-      setShowDrapeModal(true);
       setContextMenu(null);
+      // Drape immediately without showing modal - pass garmentId directly
+      setTimeout(() => startManualShoulderSelection(garmentId), 50);
     }
   };
 
+
   // START MANUAL NECK-TO-NECK DRAPING
-  const startManualShoulderSelection = useCallback(() => {
-    if (!selectedGarmentId) return;
+  const startManualShoulderSelection = useCallback((garmentId?: string) => {
+    const targetGarmentId = garmentId || selectedGarmentId;
+    if (!targetGarmentId) return;
     
-    const garment = workspaceShapes.find(s => s.id === selectedGarmentId);
+    const garment = workspaceShapes.find(s => s.id === targetGarmentId);
+    const mannequin = workspaceShapes.find(s => s.isMannequin);
+    
     if (!garment) {
       alert("Garment not found!");
       return;
     }
     
-    setManualShoulderMode({
-      garmentId: selectedGarmentId,
-      garmentLeftShoulder: undefined,
-      garmentRightShoulder: undefined,
-      mannequinLeftShoulder: undefined,
-      mannequinRightShoulder: undefined
-    });
+    if (!mannequin) {
+      alert("Mannequin not found! Please add a dress form first.");
+      return;
+    }
+    
+    // Use user-provided measurements instead of auto-detection
+    saveForUndo();
+    
+    // Calculate mannequin armpit points (between shoulder and bust, around 22% down)
+    // Sort mannequin dots by Y to find the vertical range
+    const mannequinDotsLocal = [...mannequin.dots].sort((a, b) => a.y - b.y);
+    const mannequinTopY = mannequinDotsLocal[0].y;
+    const mannequinBottomY = mannequinDotsLocal[mannequinDotsLocal.length - 1].y;
+    const mannequinHeight = mannequinBottomY - mannequinTopY;
+    
+    // Armpit is typically around 22% down from top (between shoulder at 15% and bust at 30%)
+    const mannequinArmpitY = mannequinTopY + (mannequinHeight * 0.22);
+    
+    // Find leftmost and rightmost dots near the armpit level (within 3% range)
+    const armpitRange = mannequinHeight * 0.03;
+    const armpitLevelDots = mannequinDotsLocal.filter(d => 
+      Math.abs(d.y - mannequinArmpitY) < armpitRange
+    );
+    
+    if (armpitLevelDots.length < 2) {
+      alert("Could not find mannequin armpit points!");
+      return;
+    }
+    
+    const mannequinArmpitLeft = armpitLevelDots.reduce((left, dot) => dot.x < left.x ? dot : left, armpitLevelDots[0]);
+    const mannequinArmpitRight = armpitLevelDots.reduce((right, dot) => dot.x > right.x ? dot : right, armpitLevelDots[0]);
+    
+    const mannequinArmpitLeftScreen = {
+      x: mannequin.position.x + mannequinArmpitLeft.x * mannequin.scale,
+      y: mannequin.position.y + mannequinArmpitLeft.y * mannequin.scale
+    };
+    const mannequinArmpitRightScreen = {
+      x: mannequin.position.x + mannequinArmpitRight.x * mannequin.scale,
+      y: mannequin.position.y + mannequinArmpitRight.y * mannequin.scale
+    };
+    
+    const mannequinBustPixels = Math.hypot(
+      mannequinArmpitRightScreen.x - mannequinArmpitLeftScreen.x,
+      mannequinArmpitRightScreen.y - mannequinArmpitLeftScreen.y
+    );
+    
+    // Measure garment's width in LOCAL coordinates
+    const garmentDots = garment.dots;
+    const garmentDotsLocal = garmentDots.map(d => ({ ...d })).sort((a, b) => a.y - b.y);
+    
+    // Get middle range (40-60%) for armpit/armhole measurement
+    const topY = garmentDotsLocal[0].y;
+    const bottomY = garmentDotsLocal[garmentDotsLocal.length - 1].y;
+    const garmentHeightLocal = bottomY - topY;
+    const armpitStartY = topY + (garmentHeightLocal * 0.4);
+    const armpitEndY = topY + (garmentHeightLocal * 0.6);
+    const armpitRangeDots = garmentDotsLocal.filter(d => d.y >= armpitStartY && d.y <= armpitEndY);
+    
+    const leftmostDot = armpitRangeDots.reduce((left, dot) => dot.x < left.x ? dot : left);
+    const rightmostDot = armpitRangeDots.reduce((right, dot) => dot.x > right.x ? dot : right);
+    
+    // Calculate actual armpit-to-armpit distance of garment
+    const garmentArmpitDistance = Math.hypot(
+      rightmostDot.x - leftmostDot.x,
+      rightmostDot.y - leftmostDot.y
+    );
+    
+    // Scale based on actual distances
+    const newScale = mannequinBustPixels / garmentArmpitDistance;
+    const scaleRatio = newScale / garment.scale;
+    
+    // Position LEFT armpit to LEFT armpit point, with slight downward adjustment
+    const leftOffsetX = leftmostDot.x;
+    const leftOffsetY = leftmostDot.y;
+    
+    const newLeftOffsetX = leftOffsetX * newScale;
+    const newLeftOffsetY = leftOffsetY * newScale;
+    
+    // Add small downward adjustment (about 5% of mannequin height)
+    const downwardAdjustment = mannequinHeight * mannequin.scale * 0.05;
+    
+    const newPosition = {
+      x: mannequinArmpitLeftScreen.x - newLeftOffsetX,
+      y: mannequinArmpitLeftScreen.y - newLeftOffsetY + downwardAdjustment
+    };
+    
+    console.log("✅ Draping complete - armpit to armpit alignment");
+    
+    setWorkspaceShapes(prev => prev.map(s => 
+      s.id === targetGarmentId 
+        ? { ...s, position: newPosition, scale: newScale, showDots: true, isGarment: true }
+        : s
+    ));
     
     setShowDrapeModal(false);
-    alert("Step 1 of 4: Click the LEFT NECK point of the GARMENT (where neck meets left shoulder)");
-  }, [selectedGarmentId, workspaceShapes]);
+    setSelectedGarmentId(null);
+  }, [selectedGarmentId, workspaceShapes, saveForUndo, armpitMeasurement, garmentLength]);
 
   const calculateMannequinDots = (baseWidth: number, baseHeight: number, measures: MannequinMeasurements) => {
     const centerX = baseWidth / 2;
@@ -239,7 +330,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
     { text: "Adjust measurements", target: "bust-slider", action: "adjust_slider" },
     { text: "Add Mannequin!", target: "add-mannequin-btn" },
     { text: "Right-click garment!", target: "workspace-svg", action: "context_menu_garment" },
-    { text: "See Drape option!", target: "drape-menu-btn", action: "close_menu" },
+    { text: "Click Drape option!", target: "drape-menu-btn", action: "click_drape" },
+    { text: "Bringing garment forward...", target: "workspace-svg", action: "bring_garment_front" },
     { text: "Hide the dots", target: "dots-btn" },
     { text: "Lock movement", target: "lock-btn" },
     { text: "Reset Canvas", target: "reset-btn" },
@@ -391,10 +483,35 @@ export function Studio({ onBack }: { onBack: () => void }) {
           }
         }
       }
-      else if (step.action === "close_menu") {
-        // Just close the context menu without clicking drape
+      else if (step.action === "click_drape") {
+        // Click the drape button - get the first garment shape
         await new Promise(r => setTimeout(r, 800));
+        const currentShapes = workspaceShapesRef.current;
+        const garment = currentShapes.find(s => !s.isMannequin);
+        
+        if (garment) {
+          // Set the selected garment ID first
+          setSelectedGarmentId(garment.id);
+          await new Promise(r => setTimeout(r, 100));
+          
+          const drapeBtn = document.getElementById("drape-menu-btn");
+          if (drapeBtn) {
+            drapeBtn.click();
+          }
+        }
         setContextMenu(null);
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      else if (step.action === "bring_garment_front") {
+        // Bring the garment to front so it appears over the mannequin
+        await new Promise(r => setTimeout(r, 500));
+        const currentShapes = workspaceShapesRef.current;
+        const garment = currentShapes.find(s => !s.isMannequin);
+        
+        if (garment) {
+          bringToFront(garment.id, "shape");
+        }
+        await new Promise(r => setTimeout(r, 1000));
       }
       else {
         if (step.action === "choose") {
@@ -539,35 +656,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100 text-slate-900 overflow-hidden select-none touch-none" onClick={() => setContextMenu(null)}>
-      {showDrapeModal && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowDrapeModal(false)}>
-          <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h2 className="text-lg font-black uppercase text-slate-900">Drape Garment</h2>
-                <p className="text-xs text-slate-500 mt-1">Neck-to-neck alignment</p>
-              </div>
-              <button onClick={() => setShowDrapeModal(false)} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
-            </div>
-            
-            <div className="p-4 bg-purple-50 rounded-xl mb-6">
-              <h3 className="text-sm font-bold text-purple-900 mb-2">📍 4-Click Neck-to-Neck Draping</h3>
-              <div className="text-xs text-purple-700 space-y-1">
-                <div><strong>Step 1:</strong> Click GARMENT left neck point</div>
-                <div><strong>Step 2:</strong> Click GARMENT right neck point</div>
-                <div><strong>Step 3:</strong> Click MANNEQUIN left neck point</div>
-                <div><strong>Step 4:</strong> Click MANNEQUIN right neck point</div>
-                <div className="pt-2 mt-2 border-t border-purple-200 text-purple-800">✨ Auto-drapes after 4 clicks!</div>
-              </div>
-            </div>
-            
-            <div className="flex gap-3">
-              <button onClick={() => setShowDrapeModal(false)} className="flex-1 bg-slate-100 text-slate-600 py-3 rounded-xl text-sm font-bold uppercase hover:bg-slate-200 transition-colors">Cancel</button>
-              <button id="start-draping-btn" onClick={startManualShoulderSelection} className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-sm font-bold uppercase hover:shadow-lg transition-all">Start Draping</button>
-            </div>
-          </div>
-        </div>
-      )}
       {showMannequinModal && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowMannequinModal(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-lg w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -698,165 +786,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
             <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 rounded-lg mt-2" />
           </div>
           <div ref={canvasRef} className="w-full h-full p-4 lg:p-20" onPointerDown={(e) => { 
-            // HANDLE 4-CLICK NECK-TO-NECK MODE
-            if (manualShoulderMode) {
-              const c = getCoords(e);
-              
-              if (!manualShoulderMode.garmentLeftShoulder) {
-                setManualShoulderMode({
-                  ...manualShoulderMode,
-                  garmentLeftShoulder: { x: c.x, y: c.y }
-                });
-                alert("Step 2 of 4: Click the RIGHT NECK point of the GARMENT");
-              } else if (!manualShoulderMode.garmentRightShoulder) {
-                setManualShoulderMode({
-                  ...manualShoulderMode,
-                  garmentRightShoulder: { x: c.x, y: c.y }
-                });
-                alert("Step 3 of 4: Click the LEFT NECK point of the MANNEQUIN");
-              } else if (!manualShoulderMode.mannequinLeftShoulder) {
-                setManualShoulderMode({
-                  ...manualShoulderMode,
-                  mannequinLeftShoulder: { x: c.x, y: c.y }
-                });
-                alert("Step 4 of 4: Click the RIGHT NECK point of the MANNEQUIN");
-              } else if (!manualShoulderMode.mannequinRightShoulder) {
-                // 4TH CLICK - DO DRAPING IMMEDIATELY
-                const garment = workspaceShapes.find(s => s.id === manualShoulderMode.garmentId);
-                
-                if (!garment) {
-                  alert("Garment not found!");
-                  setManualShoulderMode(null);
-                  return;
-                }
-                
-                saveForUndo();
-                
-                const garmentLeft = manualShoulderMode.garmentLeftShoulder!;
-                const garmentRight = manualShoulderMode.garmentRightShoulder!;
-                const mannequinLeft = manualShoulderMode.mannequinLeftShoulder!;
-                const mannequinRight = { x: c.x, y: c.y };
-                
-                console.log("=== YOUR 4 NECK CLICKS ===");
-                console.log("1. Garment left neck:", garmentLeft);
-                console.log("2. Garment right neck:", garmentRight);
-                console.log("3. Mannequin left neck:", mannequinLeft);
-                console.log("4. Mannequin right neck:", mannequinRight);
-                
-                // Calculate distances
-                const garmentDistance = Math.hypot(
-                  garmentRight.x - garmentLeft.x,
-                  garmentRight.y - garmentLeft.y
-                );
-                
-                const mannequinDistance = Math.hypot(
-                  mannequinRight.x - mannequinLeft.x,
-                  mannequinRight.y - mannequinLeft.y
-                );
-                
-                console.log("=== DISTANCES ===");
-                console.log("Garment neck width:", garmentDistance);
-                console.log("Mannequin neck width:", mannequinDistance);
-                
-                // Calculate new scale
-                const scaleRatio = mannequinDistance / garmentDistance;
-                const newScale = garment.scale * scaleRatio;
-                
-                console.log("=== SCALE ===");
-                console.log("Scale ratio:", scaleRatio);
-                console.log("Old scale:", garment.scale);
-                console.log("New scale:", newScale);
-                console.log(scaleRatio < 1 ? "✓ SHRINKING" : scaleRatio > 1 ? "✓ GROWING" : "= NO CHANGE");
-                
-                // Calculate position
-                const leftOffsetX = garmentLeft.x - garment.position.x;
-                const leftOffsetY = garmentLeft.y - garment.position.y;
-                
-                const newLeftOffsetX = leftOffsetX * scaleRatio;
-                const newLeftOffsetY = leftOffsetY * scaleRatio;
-                
-                const newPosition = {
-                  x: mannequinLeft.x - newLeftOffsetX,
-                  y: mannequinLeft.y - newLeftOffsetY
-                };
-                
-                console.log("=== POSITION ===");
-                console.log("New position:", newPosition);
-                
-                setWorkspaceShapes(prev => prev.map(s => 
-                  s.id === manualShoulderMode.garmentId 
-                    ? { ...s, position: newPosition, scale: newScale, showDots: true, isGarment: true }
-                    : s
-                ));
-                
-                setManualShoulderMode(null);
-                setSelectedGarmentId(null);
-              }
-              return;
-            }
-            
             // REST OF EXISTING LOGIC
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
             if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
             if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]); penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid }; } 
           }} onPointerMove={(e) => { const c = getCoords(e); if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s)); penRef.current!.lastX = c.x; penRef.current!.lastY = c.y; } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s)); } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) })); } else if (draggingShapeId && !isLocked) { setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s)); } else if (resizingId) { setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (c.rx - dragOffset.x) / 400) } : s)); setDragOffset({ x: c.rx, y: c.ry }); } }} onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
-            <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem]">
-              {/* VISUAL FEEDBACK DURING NECK-TO-NECK MODE */}
-              {manualShoulderMode && (
-                <>
-                  <rect x="10" y="10" width="450" height="90" fill="rgba(0, 0, 0, 0.8)" rx="10" />
-                  <text x="20" y="35" fill="white" fontSize="14" fontWeight="bold">
-                    {!manualShoulderMode.garmentLeftShoulder ? "Click: GARMENT LEFT NECK point" :
-                     !manualShoulderMode.garmentRightShoulder ? "Click: GARMENT RIGHT NECK point" :
-                     !manualShoulderMode.mannequinLeftShoulder ? "Click: MANNEQUIN LEFT NECK point" :
-                     "Click: MANNEQUIN RIGHT NECK point"}
-                  </text>
-                  <text x="20" y="55" fill="#fbbf24" fontSize="12">
-                    Step {!manualShoulderMode.garmentLeftShoulder ? "1" : !manualShoulderMode.garmentRightShoulder ? "2" : !manualShoulderMode.mannequinLeftShoulder ? "3" : "4"} of 4
-                  </text>
-                  
-                  {/* Show garment neck width */}
-                  {manualShoulderMode.garmentLeftShoulder && manualShoulderMode.garmentRightShoulder && (
-                    <text x="20" y="75" fill="lime" fontSize="12" fontWeight="bold">
-                      Garment neck width: {Math.round(Math.hypot(
-                        manualShoulderMode.garmentRightShoulder.x - manualShoulderMode.garmentLeftShoulder.x,
-                        manualShoulderMode.garmentRightShoulder.y - manualShoulderMode.garmentLeftShoulder.y
-                      ))}px
-                    </text>
-                  )}
-                  
-                  {/* GREEN DOTS AND LINE for garment */}
-                  {manualShoulderMode.garmentLeftShoulder && (
-                    <circle cx={manualShoulderMode.garmentLeftShoulder.x} cy={manualShoulderMode.garmentLeftShoulder.y} r="12" fill="lime" stroke="white" strokeWidth="3" />
-                  )}
-                  {manualShoulderMode.garmentRightShoulder && (
-                    <>
-                      <circle cx={manualShoulderMode.garmentRightShoulder.x} cy={manualShoulderMode.garmentRightShoulder.y} r="12" fill="lime" stroke="white" strokeWidth="3" />
-                      <line 
-                        x1={manualShoulderMode.garmentLeftShoulder!.x} 
-                        y1={manualShoulderMode.garmentLeftShoulder!.y}
-                        x2={manualShoulderMode.garmentRightShoulder.x}
-                        y2={manualShoulderMode.garmentRightShoulder.y}
-                        stroke="lime"
-                        strokeWidth="3"
-                        strokeDasharray="5,5"
-                      />
-                    </>
-                  )}
-                  
-                  {/* CYAN DOT for mannequin */}
-                  {manualShoulderMode.mannequinLeftShoulder && (
-                    <circle cx={manualShoulderMode.mannequinLeftShoulder.x} cy={manualShoulderMode.mannequinLeftShoulder.y} r="12" fill="cyan" stroke="white" strokeWidth="3" />
-                  )}
-                </>
-              )}
-              
-              {strokes.map(s => (<g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}><path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />{globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}</g>))}
+            <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem]">{strokes.map(s => (<g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}><path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />{globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}</g>))}
               {workspaceShapes.map((shape, shapeIdx) => (<g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>{shape.isMannequin ? (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => { 
-                if (manualShoulderMode) return;
                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} />{globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>) : (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath><mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}><rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />{shape.erasedPaths && shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}</mask></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => { 
-                if (manualShoulderMode) return;
                 if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; } if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} /><path d={generatePathData(shape.dots, true)} fill={shape.fillColor || "transparent"} pointerEvents="none" />{globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}{globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>)}</g>))}
             </svg>
           </div>
