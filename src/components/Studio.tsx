@@ -357,36 +357,29 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
       if (step.action === "drag_dot") {
         saveForUndo();
-        const dragAmount = 60;
         
-        // Find the actual rendered dot element
-        const dotElement = document.getElementById('workspace-dot-0');
-        if (!dotElement) {
-          console.warn('No dot found for tutorial');
-          continue;
-        }
-        
-        // Get the dot's current position on screen
-        const dotRect = dotElement.getBoundingClientRect();
-        const dotScreenX = dotRect.left + dotRect.width / 2;
-        const dotScreenY = dotRect.top + dotRect.height / 2;
-        
-        // Animate dragging the dot
-        for (let j = 0; j <= 6; j++) {
-          await new Promise(r => setTimeout(r, 60));
-          const offset = (j / 6) * dragAmount;
-          setGhostCursor({ x: dotScreenX + offset, y: dotScreenY + offset, active: true, clicking: true });
-
+        // Use deep clone and direct mutation - simpler approach
+        for (let j = 0; j < 10; j++) {
           setWorkspaceShapes(prev => {
-            if (prev.length === 0) return prev;
-            const newShapes = [...prev];
-            const shape = newShapes[newShapes.length - 1];
-            if (shape && shape.dots.length > 0) {
-              shape.dots[0].x += (dragAmount / 6) / shape.scale;
-              shape.dots[0].y += (dragAmount / 6) / shape.scale;
+            const cloned = JSON.parse(JSON.stringify(prev)) as DistortableShape[];
+            const lastShape = cloned[cloned.length - 1];
+            
+            if (lastShape && lastShape.dots.length >= 4) {
+              // Move dots with large increments
+              lastShape.dots[0].x += 5;
+              lastShape.dots[0].y -= 3;
+              lastShape.dots[1].x += 6;
+              lastShape.dots[1].y += 2;
+              lastShape.dots[2].x -= 4;
+              lastShape.dots[2].y += 5;
+              lastShape.dots[3].x += 3;
+              lastShape.dots[3].y += 6;
             }
-            return newShapes;
+            
+            return cloned;
           });
+          
+          await new Promise(r => setTimeout(r, 120));
         }
       }
       else if (step.action === "draw") {
@@ -529,6 +522,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
     setTutorialStep(null);
     setGhostCursor(p => ({ ...p, active: false }));
+    
+    // Prompt user to reset after tutorial
+    setTimeout(() => {
+      if (confirm("Tutorial complete! Click OK to reset the canvas and start fresh.")) {
+        // Reset to initial state
+        saveForUndo();
+        setWorkspaceShapes([]);
+        setStrokes([]);
+        setActiveTool("cursor");
+        setGlobalShowDots(true);
+        setIsLocked(false);
+        setSelectedShapeId(null);
+        setSelectedStrokeId(null);
+      }
+    }, 500);
   };
 
   const bringToFront = (id: string, type: "shape" | "stroke") => {
