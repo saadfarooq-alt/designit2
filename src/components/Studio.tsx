@@ -17,6 +17,7 @@ interface DistortableShape {
   erasedPaths: string[];
   isMannequin?: boolean;
   isGarment?: boolean;
+  groupId?: string;
 }
 interface Stroke { 
   id: string; 
@@ -24,6 +25,7 @@ interface Stroke {
   color: string; 
   width: number; 
   fillColor?: string;
+  groupId?: string;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean; };
@@ -80,11 +82,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string; type: "shape" | "stroke" } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string; type: "shape" | "stroke" | "selection" } | null>(null);
   const [draggingDot, setDraggingDot] = useState<{ shapeId: string; dotId: string } | null>(null);
   const [draggingStrokeDot, setDraggingStrokeDot] = useState<{ strokeId: string; dotId: string } | null>(null);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
+  const [selectionRect, setSelectionRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
@@ -533,11 +536,87 @@ export function Studio({ onBack }: { onBack: () => void }) {
         setActiveTool("cursor");
         setGlobalShowDots(true);
         setIsLocked(false);
-        setSelectedShapeId(null);
-        setSelectedStrokeId(null);
       }
     }, 500);
   };
+
+  const getBoundingBox = useCallback((item: DistortableShape | Stroke) => {
+    if ('dots' in item) {
+      const shape = item as DistortableShape;
+      const xs = shape.dots.map(d => shape.position.x + d.x * shape.scale);
+      const ys = shape.dots.map(d => shape.position.y + d.y * shape.scale);
+      return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+    } else {
+      const stroke = item as Stroke;
+      const xs = stroke.points.map(p => p.x);
+      const ys = stroke.points.map(p => p.y);
+      return { x: Math.min(...xs), y: Math.min(...ys), width: Math.max(...xs) - Math.min(...xs), height: Math.max(...ys) - Math.min(...ys) };
+    }
+  }, []);
+
+  const isItemInRect = useCallback((bbox: { x: number; y: number; width: number; height: number }, rect: { x1: number; y1: number; x2: number; y2: number }) => {
+    const rectX = Math.min(rect.x1, rect.x2);
+    const rectY = Math.min(rect.y1, rect.y2);
+    const rectW = Math.abs(rect.x2 - rect.x1);
+    const rectH = Math.abs(rect.y2 - rect.y1);
+    return bbox.x < rectX + rectW && bbox.x + bbox.width > rectX && bbox.y < rectY + rectH && bbox.y + bbox.height > rectY;
+  }, []);
+
+  const createGroupFromSelection = useCallback(() => {
+    if (!selectionRect) return;
+    saveForUndo();
+    const groupId = `grp-${Date.now()}`;
+    
+    // Mark all shapes in rectangle with groupId
+    setWorkspaceShapes(prev => prev.map(shape => {
+      const bbox = getBoundingBox(shape);
+      if (isItemInRect(bbox, selectionRect)) {
+        return { ...shape, groupId };
+      }
+      return shape;
+    }));
+    
+    // Mark all strokes in rectangle with groupId
+    setStrokes(prev => prev.map(stroke => {
+      const bbox = getBoundingBox(stroke);
+      if (isItemInRect(bbox, selectionRect)) {
+        return { ...stroke, groupId };
+      }
+      return stroke;
+    }));
+    
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect, saveForUndo]);
+
+  const ungroupItemsFromSelection = useCallback(() => {
+    if (!selectionRect) return;
+    saveForUndo();
+    
+    // Find all unique groupIds in the selection
+    const groupIds = new Set<string>();
+    workspaceShapes.forEach(shape => {
+      const bbox = getBoundingBox(shape);
+      if (isItemInRect(bbox, selectionRect) && shape.groupId) {
+        groupIds.add(shape.groupId);
+      }
+    });
+    strokes.forEach(stroke => {
+      const bbox = getBoundingBox(stroke);
+      if (isItemInRect(bbox, selectionRect) && stroke.groupId) {
+        groupIds.add(stroke.groupId);
+      }
+    });
+    
+    // Remove groupId from all items that have these groupIds
+    groupIds.forEach(groupId => {
+      setWorkspaceShapes(prev => prev.map(s => s.groupId === groupId ? { ...s, groupId: undefined } : s));
+      setStrokes(prev => prev.map(st => st.groupId === groupId ? { ...st, groupId: undefined } : st));
+    });
+    
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect, saveForUndo]);
 
   const bringToFront = (id: string, type: "shape" | "stroke") => {
     saveForUndo();
@@ -779,14 +858,27 @@ export function Studio({ onBack }: { onBack: () => void }) {
           )}
           {contextMenu && (
             <div className="fixed z-[300] bg-white border border-slate-200 shadow-2xl rounded-2xl overflow-hidden py-1 min-w-[140px]" style={{ left: contextMenu.x, top: contextMenu.y }} onClick={(e) => e.stopPropagation()}>
-              <button onClick={() => bringToFront(contextMenu.id, contextMenu.type)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Bring to Front</button>
-              <button onClick={() => sendToBack(contextMenu.id, contextMenu.type)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Send to Back</button>
-              {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
-                <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
-                  🎀 Drape to Mannequin
-                </button>
+              {contextMenu.type === "selection" ? (
+                <>
+                  <button onClick={createGroupFromSelection} className="w-full text-left px-4 py-2 hover:bg-amber-50 text-[9px] font-black uppercase border-b border-slate-100 text-amber-600">
+                    🔗 Group Items
+                  </button>
+                  <button onClick={ungroupItemsFromSelection} className="w-full text-left px-4 py-2 hover:bg-orange-50 text-[9px] font-black uppercase text-orange-600">
+                    🔓 Ungroup Items
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => bringToFront(contextMenu.id, contextMenu.type as "shape" | "stroke")} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Bring to Front</button>
+                  <button onClick={() => sendToBack(contextMenu.id, contextMenu.type as "shape" | "stroke")} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Send to Back</button>
+                  {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
+                    <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
+                      🎀 Drape to Mannequin
+                    </button>
+                  )}
+                  <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else if (contextMenu.type === "stroke") setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">Delete Item</button>
+                </>
               )}
-              <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">Delete Item</button>
             </div>
           )}
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
@@ -797,10 +889,120 @@ export function Studio({ onBack }: { onBack: () => void }) {
             // REST OF EXISTING LOGIC
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
+            
+            // Start selection rectangle
+            if (activeTool === "cursor" && !isLocked && e.target === workspaceRef.current) {
+              setSelectionRect({ x1: c.x, y1: c.y, x2: c.x, y2: c.y });
+            }
+            
             if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
             if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]); penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid }; } 
-          }} onPointerMove={(e) => { const c = getCoords(e); if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s)); penRef.current!.lastX = c.x; penRef.current!.lastY = c.y; } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s)); } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) })); } else if (draggingShapeId && !isLocked) { setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s)); } else if (resizingId) { setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + (c.rx - dragOffset.x) / 400) } : s)); setDragOffset({ x: c.rx, y: c.ry }); } }} onPointerUp={() => { isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
-            <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem]">{strokes.map(s => (<g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}><path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />{globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}</g>))}
+          }} onPointerMove={(e) => { const c = getCoords(e); 
+            
+            // Update selection rectangle
+            if (selectionRect && isPointerDownRef.current) {
+              setSelectionRect(prev => prev ? { ...prev, x2: c.x, y2: c.y } : null);
+            }
+            
+            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s)); penRef.current!.lastX = c.x; penRef.current!.lastY = c.y; } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s)); } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) })); } else if (draggingShapeId && !isLocked) { 
+              const shape = workspaceShapes.find(s => s.id === draggingShapeId);
+              if (shape?.groupId) {
+                // Move all items in the group
+                const deltaX = c.x - dragOffset.x - shape.position.x;
+                const deltaY = c.y - dragOffset.y - shape.position.y;
+                setWorkspaceShapes(prev => prev.map(s => s.groupId === shape.groupId ? { ...s, position: { x: s.position.x + deltaX, y: s.position.y + deltaY } } : s));
+                setStrokes(prev => prev.map(st => st.groupId === shape.groupId ? { ...st, points: st.points.map(p => ({ ...p, x: p.x + deltaX, y: p.y + deltaY })) } : st));
+              } else {
+                setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
+              }
+            } else if (resizingId) { 
+              const shape = workspaceShapes.find(s => s.id === resizingId);
+              if (shape?.groupId) {
+                // Get all items in the group and calculate group center
+                const groupShapes = workspaceShapes.filter(s => s.groupId === shape.groupId);
+                const groupStrokes = strokes.filter(st => st.groupId === shape.groupId);
+                
+                // Calculate scale factor (ratio, not delta)
+                const currentDist = Math.hypot(c.rx - shape.position.x, c.ry - shape.position.y);
+                const prevDist = Math.hypot(dragOffset.x - shape.position.x, dragOffset.y - shape.position.y);
+                const scaleFactor = currentDist / prevDist;
+                
+                // Find group bounding box center
+                const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
+                const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
+                groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
+                const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                
+                // Resize and reposition shapes relative to center
+                setWorkspaceShapes(prev => prev.map(s => {
+                  if (s.groupId === shape.groupId) {
+                    const dx = s.position.x - centerX;
+                    const dy = s.position.y - centerY;
+                    return {
+                      ...s,
+                      scale: Math.max(0.1, s.scale * scaleFactor),
+                      position: {
+                        x: centerX + dx * scaleFactor,
+                        y: centerY + dy * scaleFactor
+                      }
+                    };
+                  }
+                  return s;
+                }));
+                
+                // Resize and reposition strokes relative to center
+                setStrokes(prev => prev.map(st => {
+                  if (st.groupId === shape.groupId) {
+                    return {
+                      ...st,
+                      points: st.points.map(p => ({
+                        ...p,
+                        x: centerX + (p.x - centerX) * scaleFactor,
+                        y: centerY + (p.y - centerY) * scaleFactor
+                      }))
+                    };
+                  }
+                  return st;
+                }));
+              } else {
+                const scaleChange = (c.rx - dragOffset.x) / 400;
+                setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + scaleChange) } : s));
+              }
+              setDragOffset({ x: c.rx, y: c.ry }); 
+            } }} onPointerUp={(e) => { 
+            // Show context menu for selection rectangle
+            if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
+              setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+            } else {
+              setSelectionRect(null);
+            }
+            isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
+            <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem]" onContextMenu={(e) => {
+              if (selectionRect) {
+                e.preventDefault();
+                e.stopPropagation();
+                const rect = { x: Math.min(selectionRect.x1, selectionRect.x2), y: Math.min(selectionRect.y1, selectionRect.y2), width: Math.abs(selectionRect.x2 - selectionRect.x1), height: Math.abs(selectionRect.y2 - selectionRect.y1) };
+                const c = getCoords(e);
+                if (c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height) {
+                  setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+                }
+              }
+            }}>
+              {selectionRect && (
+                <rect 
+                  x={Math.min(selectionRect.x1, selectionRect.x2)} 
+                  y={Math.min(selectionRect.y1, selectionRect.y2)} 
+                  width={Math.abs(selectionRect.x2 - selectionRect.x1)} 
+                  height={Math.abs(selectionRect.y2 - selectionRect.y1)} 
+                  fill="rgba(59, 130, 246, 0.1)" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2} 
+                  strokeDasharray="5,5"
+                  style={{ cursor: 'context-menu' }}
+                />
+              )}
+              {strokes.map(s => (<g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}><path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />{globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}</g>))}
               {workspaceShapes.map((shape, shapeIdx) => (<g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>{shape.isMannequin ? (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => { 
                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} />{globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>) : (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath><mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}><rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />{shape.erasedPaths && shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}</mask></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => { 
                 if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; } if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} /><path d={generatePathData(shape.dots, true)} fill={shape.fillColor || "transparent"} pointerEvents="none" />{globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}{globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>)}</g>))}
