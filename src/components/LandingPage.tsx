@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import Link from "next/link";
 
 export default function LandingPage({ onStart }: { onStart: () => void }) {
   return (
@@ -9,9 +10,17 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
           <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
           <span className="font-black text-xl tracking-tighter uppercase">DesignIt</span>
         </div>
-        <button onClick={onStart} className="bg-[#800000] text-white px-6 py-2 rounded-full font-bold text-sm uppercase transition-transform hover:scale-105">
-          Launch Studio
-        </button>
+        <div className="flex items-center gap-6">
+          <Link href="/about" className="text-slate-600 hover:text-slate-900 font-medium text-sm uppercase transition-colors">
+            About
+          </Link>
+          <Link href="/contact" className="text-slate-600 hover:text-slate-900 font-medium text-sm uppercase transition-colors">
+            Contact
+          </Link>
+          <button onClick={onStart} className="bg-[#800000] text-white px-6 py-2 rounded-full font-bold text-sm uppercase transition-transform hover:scale-105">
+            Launch Studio
+          </button>
+        </div>
       </nav>
 
       <main className="flex-1 flex flex-col items-center justify-center px-6 text-center">

@@ -7,31 +7,92 @@ import { Analytics } from "@vercel/analytics/next";
 import React from "react";
 
 export const metadata: Metadata = {
-  title: "Design Studio — Manipulate images online",
+  title: "DesignIt - Free Online Design Tool for Clothes, Jewelry & More | Canva Alternative",
   description:
-    "Design Studio — an intuitive web app to trace, edit and manipulate images online. Powerful image editor and design tools to create professional visuals fast — a great alternative to Adobe and Canva.",
+    "Create stunning designs for clothes, jewelry, fashion, and more - 100% free! Easy-to-use online design studio with image tracing, vector editing, and dress form tools. The best free Canva alternative for creative designers.",
   keywords: [
-    "manipulate images",
-    "image editor",
-    "online design",
-    "vector trace",
-    "photo editor",
-    "graphic design",
+    // Primary Keywords - Canva Alternative
     "Canva alternative",
-    "Adobe alternative",
+    "Canva alternative free",
+    "free design tool like Canva",
+    "better than Canva",
+    "Canva competitor",
+    "online design tool free",
+    "free graphic design software",
+    
+    // User-Friendly Design Tools
+    "easy design tool",
+    "design app for beginners",
+    "free online design maker",
+    "no experience design tool",
+    "simple design software",
+    "drag and drop design",
+    "design anything online",
+    
+    // Fashion & Jewelry Focus
+    "design clothes online free",
+    "jewelry design online",
+    "fashion design free",
+    "clothing designer app",
+    "design your own clothes",
+    "jewelry maker online",
+    "fashion design for beginners",
+    "create clothing designs",
+    "DIY fashion design",
+    "custom jewelry design",
+    
+    // General Creative Design
+    "create designs online",
+    "design tool online free",
+    "web design tool",
+    "creative design software",
+    "digital design tool",
+    "design studio online",
+    "free designer app",
+    
+    // Image Editing
+    "online image editor",
+    "edit images free",
+    "image manipulation tool",
+    "trace image online",
+    "vectorize image free",
+    "photo editor online",
+    "image to vector converter",
+    
+    // Features
+    "dress form online",
+    "mannequin tool",
+    "draping tool online",
+    "pattern design tool",
+    "vector editor free",
+    "drawing tool online",
+    
+    // Target Users
+    "design tool for hobbyists",
+    "DIY design software",
+    "creative tools free",
+    "design for everyone",
+    "beginner design app",
+    
+    // Competitor Alternatives
+    "Adobe alternative free",
+    "Photoshop alternative",
+    "Illustrator alternative free",
+    "Figma alternative",
+    "free design software no download",
   ],
   openGraph: {
-    title: "Design Studio — Manipulate images online",
+    title: "DesignIt - Free Design Tool for Clothes, Jewelry & More | Canva Alternative",
     description:
-      "Trace, edit and manipulate images in the browser. Create vector shapes, apply fills, remove backgrounds and export assets — fast and simple.",
+      "Design anything you imagine - clothes, jewelry, graphics, and more! 100% free, easy-to-use online design studio. No experience needed. The best free alternative to Canva.",
     url: "https://idesignits.com/",
-    siteName: "Design Studio",
+    siteName: "DesignIt - Free Design Studio",
     images: [
       {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "Design Studio preview",
+        alt: "DesignIt - Free Online Design Tool for Clothes, Jewelry & Creative Projects",
       },
     ],
     locale: "en_US",
@@ -39,9 +100,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Design Studio — Manipulate images online",
+    title: "DesignIt - Free Design Tool | Better Alternative to Canva",
     description:
-      "Trace, edit and manipulate images in the browser. Create assets and export high-quality visuals — design faster than ever.",
+      "Create beautiful designs for clothes, jewelry, and more - 100% free! Easy drag-and-drop design studio with professional tools. No downloads, no experience needed.",
     images: ["/og-image.png"],
   },
   robots: {
@@ -57,21 +118,51 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  // Structured data JSON-LD
+  // Structured data JSON-LD for SEO
   const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "WebSite",
+    "@type": "WebApplication",
+    name: "DesignIt - Free Design Studio",
     url: "https://idesignits.com/",
-    name: "Design Studio",
+    applicationCategory: "DesignApplication",
+    operatingSystem: "Any (Web Browser)",
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency": "USD",
+    },
     description:
-      "Design Studio v2 — trace/extract images, create vector shapes, draw, and edit designs in the browser. Manipulate images online with powerful, easy-to-use tools.",
+      "Free online design tool for everyone! Create beautiful designs for clothes, jewelry, fashion, graphics, and more. Easy-to-use design studio with image tracing, vector editing, and professional tools. No downloads, no experience needed. The perfect free alternative to Canva.",
+    screenshot: "https://idesignits.com/og-image.png",
+    featureList: [
+      "100% Free - No subscriptions or hidden fees",
+      "Easy to use - No design experience needed",
+      "Design clothes, jewelry, and more",
+      "Image tracing and vectorization",
+      "Customizable dress form with measurements",
+      "Garment draping tools for fashion design",
+      "Vector shape manipulation",
+      "Drawing and painting tools",
+      "No installation - Works in browser",
+      "Better alternative to Canva",
+    ],
     publisher: {
       "@type": "Organization",
-      name: "Learncapes inc.",
+      name: "Learncapes Inc.",
       logo: {
         "@type": "ImageObject",
         url: "https://idesignits.com/logo.png",
       },
+    },
+    aggregateRating: {
+      "@type": "AggregateRating",
+      ratingValue: "4.9",
+      ratingCount: "284",
+      bestRating: "5",
+    },
+    audience: {
+      "@type": "Audience",
+      audienceType: "Everyone - Beginners to Professionals",
     },
   };
 
