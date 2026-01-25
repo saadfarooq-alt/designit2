@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
 import ImageTracer from "imagetracerjs";
 
 interface Dot { id: string; x: number; y: number; }
@@ -595,11 +596,22 @@ export function Studio({ onBack }: { onBack: () => void }) {
         </div>
       )}
       <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-white border-b border-slate-200 shrink-0 z-[100]">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:gap-4">
           <button id="trace-btn" onClick={() => setIsSidebarOpen(true)} className="lg:hidden bg-yellow-400 text-black px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-sm">Trace</button>
           <div onClick={onBack} className="flex flex-col cursor-pointer active:scale-95 px-2">
             <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em]">DesignIt <span className="text-yellow-500">.</span></span>
-            <span className="hidden xs:block text-[7px] font-medium uppercase text-slate-400">Home</span>
+            <span className="hidden xs:block text-[7px] font-medium uppercase text-slate-400">Studio</span>
+          </div>
+          <div className="hidden md:flex items-center gap-4">
+            <Link href="/" className="text-slate-600 hover:text-slate-900 font-medium text-[9px] uppercase transition-colors">
+              Home
+            </Link>
+            <Link href="/about" className="text-slate-600 hover:text-slate-900 font-medium text-[9px] uppercase transition-colors">
+              About
+            </Link>
+            <Link href="/contact" className="text-slate-600 hover:text-slate-900 font-medium text-[9px] uppercase transition-colors">
+              Contact
+            </Link>
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
