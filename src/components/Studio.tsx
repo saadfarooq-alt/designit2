@@ -297,13 +297,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
       const baseWidth = img.width;
       const baseHeight = img.height;
       const mannequinDots = calculateMannequinDots(baseWidth, baseHeight, measures);
+      
+      // Adjust position and scale for mobile
+      const isMobile = window.innerWidth < 768;
+      const posX = isMobile ? 50 : 150;
+      const posY = isMobile ? 20 : 30;
+      const scaleValue = isMobile ? 0.35 : 0.6;
+      
       const mannequinShape: DistortableShape = {
         id: `mannequin-${Date.now()}`,
         img: mannequinImagePath,
         dots: mannequinDots,
         dims: { width: baseWidth, height: baseHeight },
-        position: { x: 150, y: 30 },
-        scale: 0.6,
+        position: { x: posX, y: posY },
+        scale: scaleValue,
         showDots: false,
         fillColor: undefined,
         erasedPaths: [],
@@ -1134,7 +1141,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               setSelectionRect(null);
             }
             isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
-            <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem]" onContextMenu={(e) => {
+            <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
               if (selectionRect) {
                 e.preventDefault();
                 e.stopPropagation();
