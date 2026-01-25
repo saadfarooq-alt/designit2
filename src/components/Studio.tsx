@@ -88,6 +88,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const [clipboard, setClipboard] = useState<{ shapes: DistortableShape[]; strokes: Stroke[] } | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
@@ -618,6 +619,153 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setContextMenu(null);
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect, saveForUndo]);
 
+  const copyFromSelection = useCallback(async () => {
+    if (!selectionRect) return;
+    
+    try {
+      const rectX = Math.min(selectionRect.x1, selectionRect.x2);
+      const rectY = Math.min(selectionRect.y1, selectionRect.y2);
+      const rectW = Math.abs(selectionRect.x2 - selectionRect.x1);
+      const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
+      
+      if (rectW < 5 || rectH < 5) return;
+      
+      // Create a canvas to composite all items in the selection
+      const canvas = document.createElement('canvas');
+      const scale = 2;
+      canvas.width = rectW * scale;
+      canvas.height = rectH * scale;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      ctx.scale(scale, scale);
+      
+      // Load all images first
+      const shapesToDraw = workspaceShapes.filter(shape => {
+        const bbox = getBoundingBox(shape);
+        return isItemInRect(bbox, selectionRect);
+      });
+      
+      const imagePromises = shapesToDraw.map(shape => {
+        return new Promise<{ shape: DistortableShape; img: HTMLImageElement } | null>((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve({ shape, img });
+          img.onerror = () => resolve(null);
+          img.src = shape.img;
+        });
+      });
+      
+      const loadedImages = await Promise.all(imagePromises);
+      
+      // Draw all loaded shapes
+      loadedImages.forEach(item => {
+        if (!item) return;
+        const { shape, img } = item;
+        
+        ctx.save();
+        ctx.translate(shape.position.x - rectX, shape.position.y - rectY);
+        ctx.scale(shape.scale, shape.scale);
+        
+        // Create clipping path
+        ctx.beginPath();
+        shape.dots.forEach((dot, i) => {
+          if (i === 0) ctx.moveTo(dot.x, dot.y);
+          else ctx.lineTo(dot.x, dot.y);
+        });
+        ctx.closePath();
+        ctx.clip();
+        
+        // Draw image
+        ctx.drawImage(img, 0, 0, shape.dims.width, shape.dims.height);
+        ctx.restore();
+      });
+      
+      // Draw all strokes that intersect with selection
+      strokes.forEach(stroke => {
+        const bbox = getBoundingBox(stroke);
+        if (isItemInRect(bbox, selectionRect)) {
+          ctx.save();
+          ctx.translate(-rectX, -rectY);
+          ctx.strokeStyle = stroke.color;
+          ctx.lineWidth = stroke.width;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          
+          ctx.beginPath();
+          stroke.points.forEach((p, i) => {
+            if (i === 0) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          });
+          ctx.stroke();
+          
+          if (stroke.fillColor) {
+            ctx.fillStyle = stroke.fillColor;
+            ctx.fill();
+          }
+          ctx.restore();
+        }
+      });
+      
+      const croppedDataUrl = canvas.toDataURL('image/png');
+      
+      // Store in clipboard
+      const clipboardData = {
+        shapes: [{
+          id: 'clipboard-temp',
+          img: croppedDataUrl,
+          dots: [
+            { id: 'd1', x: 0, y: 0 },
+            { id: 'd2', x: rectW, y: 0 },
+            { id: 'd3', x: rectW, y: rectH },
+            { id: 'd4', x: 0, y: rectH }
+          ],
+          dims: { width: rectW, height: rectH },
+          position: { x: rectX, y: rectY },
+          scale: 1,
+          showDots: true,
+          erasedPaths: []
+        }],
+        strokes: []
+      };
+      setClipboard(clipboardData);
+      console.log('Copied to clipboard successfully');
+      
+    } catch (error) {
+      console.error('Copy failed:', error);
+    }
+    
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
+
+  const pasteFromClipboard = useCallback(() => {
+    if (!clipboard || (!clipboard.shapes.length && !clipboard.strokes.length)) return;
+    saveForUndo();
+    
+    const PASTE_OFFSET = 30;
+    
+    // Get paste position from last selection or center
+    let pasteX = 100;
+    let pasteY = 100;
+    if (selectionRect) {
+      pasteX = Math.min(selectionRect.x1, selectionRect.x2);
+      pasteY = Math.min(selectionRect.y1, selectionRect.y2);
+    }
+    
+    // Paste shapes with new IDs and position at paste location
+    const newShapes = clipboard.shapes.map(shape => ({
+      ...shape,
+      id: `s-${Date.now()}-${Math.random()}`,
+      position: { x: pasteX, y: pasteY },
+      groupId: undefined // Remove group when pasting
+    }));
+    
+    setWorkspaceShapes(prev => [...prev, ...newShapes]);
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [clipboard, saveForUndo, selectionRect]);
+
   const bringToFront = (id: string, type: "shape" | "stroke") => {
     saveForUndo();
     if (type === "shape") {
@@ -863,9 +1011,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   <button onClick={createGroupFromSelection} className="w-full text-left px-4 py-2 hover:bg-amber-50 text-[9px] font-black uppercase border-b border-slate-100 text-amber-600">
                     🔗 Group Items
                   </button>
-                  <button onClick={ungroupItemsFromSelection} className="w-full text-left px-4 py-2 hover:bg-orange-50 text-[9px] font-black uppercase text-orange-600">
+                  <button onClick={ungroupItemsFromSelection} className="w-full text-left px-4 py-2 hover:bg-orange-50 text-[9px] font-black uppercase border-b border-slate-100 text-orange-600">
                     🔓 Ungroup Items
                   </button>
+                  <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
+                    📋 Copy Area
+                  </button>
+                  {clipboard && clipboard.shapes.length > 0 && (
+                    <button onClick={pasteFromClipboard} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase text-green-600">
+                      📌 Paste
+                    </button>
+                  )}
                 </>
               ) : (
                 <>

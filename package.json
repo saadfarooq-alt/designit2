@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@vercel/analytics": "^1.6.1",
+    "html2canvas": "^1.4.1",
     "imagetracerjs": "^1.2.6",
     "next": "16.1.4",
     "react": "19.2.3",
