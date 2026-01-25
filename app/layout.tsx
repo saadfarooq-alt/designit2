@@ -129,7 +129,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     offers: {
       "@type": "Offer",
       price: "0",
-      priceCurrency": "USD",
+      priceCurrency: "USD",
     },
     description:
       "Free online design tool for everyone! Create beautiful designs for clothes, jewelry, fashion, graphics, and more. Easy-to-use design studio with image tracing, vector editing, and professional tools. No downloads, no experience needed. The perfect free alternative to Canva.",
