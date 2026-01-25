@@ -225,8 +225,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
     { text: "Select a template...", target: "template-0" },
     { text: "Open Tracing...", target: "trace-btn" },
     { text: "Choose paths...", target: "trace-svg-container", action: "choose" },
-    { text: "Sample points...", target: "sample-btn" },
-    { text: "Add to workspace!", target: "add-btn" },
+    { text: "Add to Canvas!", target: "add-btn" },
     { text: "Drag a dot to reshape!", target: "workspace-dot-0", action: "drag_dot" },
     { text: "Select Pen Tool", target: "pen-tool" },
     { text: "Draw something!", target: "workspace-svg", action: "draw" },
@@ -238,7 +237,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
     { text: "Right-click for Menu", target: "workspace-svg", action: "context_menu" },
     { text: "Add a Dress Form!", target: "dress-form-btn", action: "open_mannequin_modal" },
     { text: "Adjust measurements", target: "bust-slider", action: "adjust_slider" },
-    { text: "Add to Canvas!", target: "add-mannequin-btn" },
+    { text: "Add Mannequin!", target: "add-mannequin-btn" },
     { text: "Right-click garment!", target: "workspace-svg", action: "context_menu_garment" },
     { text: "See Drape option!", target: "drape-menu-btn", action: "close_menu" },
     { text: "Hide the dots", target: "dots-btn" },
@@ -637,10 +636,32 @@ export function Studio({ onBack }: { onBack: () => void }) {
               <h3 className="text-xs font-black uppercase bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Source ✨</h3>
               <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-amber-600 hover:text-orange-600 text-xs font-bold transition-colors">CLOSE ✕</button>
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            <div className="grid grid-cols-2 gap-2 mb-3">
               <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-blue-500 to-blue-600 text-white py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
-              <button id="sample-btn" onClick={() => { const ns = "http://www.w3.org/2000/svg"; let pts: Dot[] = []; candidates.filter(c => c.selected).forEach(c => { const path = document.createElementNS(ns, "path"); path.setAttribute("d", c.d); document.body.appendChild(path); const len = path.getTotalLength(); for (let i = 0; i <= len; i += Math.max(3, Math.round(len / 40))) { const p = path.getPointAtLength(i); pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y }); } document.body.removeChild(path); }); setSourceDots(pts); }} className="bg-gradient-to-br from-amber-400 to-orange-400 text-white py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all">Sample</button>
-              <button id="add-btn" onClick={() => { saveForUndo(); const fs = imgDims.width ? 150 / imgDims.width : 1; setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...sourceDots], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [] }]); setSourceDots([]); setIsSidebarOpen(false); }} disabled={sourceDots.length === 0} className="bg-gradient-to-br from-slate-800 to-blue-900 text-amber-300 py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-30">Add</button>
+              <button id="add-btn" onClick={() => { 
+                // Sample the dots first
+                const ns = "http://www.w3.org/2000/svg"; 
+                let pts: Dot[] = []; 
+                candidates.filter(c => c.selected).forEach(c => { 
+                  const path = document.createElementNS(ns, "path"); 
+                  path.setAttribute("d", c.d); 
+                  document.body.appendChild(path); 
+                  const len = path.getTotalLength(); 
+                  for (let i = 0; i <= len; i += Math.max(3, Math.round(len / 40))) { 
+                    const p = path.getPointAtLength(i); 
+                    pts.push({ id: `p-${Math.random()}`, x: p.x, y: p.y }); 
+                  } 
+                  document.body.removeChild(path); 
+                }); 
+                // Then add to workspace
+                if (pts.length > 0) {
+                  saveForUndo(); 
+                  const fs = imgDims.width ? 150 / imgDims.width : 1; 
+                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...pts], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [] }]); 
+                  setSourceDots([]); 
+                  setIsSidebarOpen(false);
+                }
+              }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-blue-900 text-amber-300 py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-30">Add to Canvas</button>
             </div>
           </div>
           <div className="flex-1 p-4 overflow-hidden">
@@ -648,6 +669,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               <svg id="trace-svg-container" viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-4">
                 {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
                 {candidates.map((c, idx) => (<path key={c.id} id={idx === 0 ? "path-0-0" : c.id} d={c.d} fill={c.selected ? "rgba(251, 146, 60, 0.5)" : "transparent"} stroke={c.selected ? "#f97316" : "#cbd5e1"} strokeWidth={4} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />))}
+                {sourceDots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={8} fill="#f97316" stroke="#ffffff" strokeWidth={3} opacity={0.9} />))}
               </svg>
             </div>
           </div>
