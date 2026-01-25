@@ -54,23 +54,23 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-white text-slate-900">
-      <nav className="flex items-center justify-between px-6 py-4 border-b">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 text-slate-900">
+      <nav className="flex items-center justify-between px-6 py-5 border-b-2 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 shadow-md">
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
-          <span className="font-black text-xl tracking-tighter uppercase">DesignIt</span>
+          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">DesignIt ☀</span>
         </div>
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-slate-600 hover:text-slate-900 font-medium text-sm uppercase">
+          <Link href="/" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
             Home
           </Link>
-          <Link href="/about" className="text-slate-600 hover:text-slate-900 font-medium text-sm uppercase">
+          <Link href="/about" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
             About
           </Link>
-          <Link href="/contact" className="text-[#800000] font-bold text-sm uppercase">
+          <Link href="/contact" className="text-amber-600 font-bold text-sm uppercase">
             Contact
           </Link>
-          <Link href="/" className="bg-[#800000] text-white px-6 py-2 rounded-full font-bold text-sm uppercase transition-transform hover:scale-105">
+          <Link href="/" className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-lg hover:shadow-xl">
             Launch Studio
           </Link>
         </div>
@@ -78,8 +78,8 @@ export default function ContactPage() {
 
       <main className="flex-1 px-6 py-16">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-5xl md:text-7xl font-black mb-8 leading-tight">
-            Get in <span className="text-[#800000]">Touch</span>
+          <h1 className="text-5xl md:text-7xl font-black mb-8 leading-tight text-slate-800">
+            Get in <span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">Touch</span>
           </h1>
           
           <div className="grid md:grid-cols-2 gap-12">
@@ -89,21 +89,21 @@ export default function ContactPage() {
               
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-black mb-2 text-[#800000]">Email</h3>
-                  <a href="mailto:info@idesignits.com" className="text-slate-600 hover:text-[#800000] transition-colors">
+                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Email</h3>
+                  <a href="mailto:info@idesignits.com" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
                     info@idesignits.com
                   </a>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-black mb-2 text-[#800000]">Support</h3>
-                  <a href="mailto:support@idesignits.com" className="text-slate-600 hover:text-[#800000] transition-colors">
+                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Support</h3>
+                  <a href="mailto:support@idesignits.com" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
                     support@idesignits.com
                   </a>
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-black mb-2 text-[#800000]">Company</h3>
+                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Company</h3>
                   <p className="text-slate-600">
                     Learncapes Inc.<br />
                     Digital Design Solutions
@@ -111,22 +111,22 @@ export default function ContactPage() {
                 </div>
 
                 <div>
-                  <h3 className="text-lg font-black mb-2 text-[#800000]">Social Media</h3>
+                  <h3 className="text-lg font-black mb-2 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Social Media</h3>
                   <div className="flex gap-4">
-                    <a href="#" className="text-slate-600 hover:text-[#800000] transition-colors font-medium">
+                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
                       Twitter
                     </a>
-                    <a href="#" className="text-slate-600 hover:text-[#800000] transition-colors font-medium">
+                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
                       Instagram
                     </a>
-                    <a href="#" className="text-slate-600 hover:text-[#800000] transition-colors font-medium">
+                    <a href="#" className="text-slate-600 hover:text-amber-600 transition-colors font-medium">
                       LinkedIn
                     </a>
                   </div>
                 </div>
               </div>
 
-              <div className="mt-12 p-6 bg-slate-50 rounded-2xl">
+              <div className="mt-12 p-6 bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border-2 border-amber-200 shadow-md">
                 <h3 className="text-lg font-black mb-3 text-slate-900">Office Hours</h3>
                 <p className="text-slate-600 mb-2">Monday - Friday: 9:00 AM - 6:00 PM EST</p>
                 <p className="text-slate-600">Saturday - Sunday: Closed</p>
@@ -172,7 +172,7 @@ export default function ContactPage() {
                       value={formData.name}
                       onChange={handleChange}
                       required
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#800000] focus:outline-none transition-colors"
+                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
                       placeholder="Your name"
                     />
                   </div>
@@ -188,7 +188,7 @@ export default function ContactPage() {
                       value={formData.email}
                       onChange={handleChange}
                       required
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#800000] focus:outline-none transition-colors"
+                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
                       placeholder="your@email.com"
                     />
                   </div>
@@ -204,7 +204,7 @@ export default function ContactPage() {
                       value={formData.subject}
                       onChange={handleChange}
                       required
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#800000] focus:outline-none transition-colors"
+                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors"
                       placeholder="What's this about?"
                     />
                   </div>
@@ -220,7 +220,7 @@ export default function ContactPage() {
                       onChange={handleChange}
                       required
                       rows={6}
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-[#800000] focus:outline-none transition-colors resize-none"
+                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl focus:border-amber-500 focus:outline-none transition-colors resize-none"
                       placeholder="Tell us more..."
                     />
                   </div>
@@ -228,9 +228,9 @@ export default function ContactPage() {
                   <button
                     type="submit"
                     disabled={isSubmitting}
-                    className="w-full bg-[#800000] text-white px-8 py-4 rounded-xl font-black uppercase text-sm shadow-lg hover:bg-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full bg-gradient-to-r from-amber-500 to-orange-500 text-white px-8 py-4 rounded-full font-black uppercase text-sm shadow-lg hover:shadow-xl hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isSubmitting ? "Sending..." : "Send Message"}
+                    {isSubmitting ? "Sending..." : "Send Message →"}
                   </button>
 
                   <p className="text-xs text-slate-500 text-center">
@@ -241,21 +241,21 @@ export default function ContactPage() {
             </div>
           </div>
 
-          <div className="mt-16 bg-gradient-to-br from-slate-900 to-[#800000] rounded-3xl p-8 md:p-12 text-center text-white">
+          <div className="mt-16 bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 rounded-3xl p-8 md:p-12 text-center text-white shadow-2xl">
             <h2 className="text-3xl font-black mb-4">Need Help Getting Started?</h2>
-            <p className="text-white/80 mb-6 max-w-2xl mx-auto">
+            <p className="text-white mb-6 max-w-2xl mx-auto font-medium">
               Check out our interactive tutorial that guides you through all the features of DesignIt. 
               Click the yellow "?" button in the studio to start learning!
             </p>
-            <Link href="/" className="inline-block bg-white text-[#800000] px-10 py-4 rounded-2xl font-black uppercase text-sm shadow-xl hover:scale-105 transition-transform">
-              Launch Studio
+            <Link href="/" className="inline-block bg-white text-amber-600 px-10 py-4 rounded-full font-black uppercase text-sm shadow-xl hover:scale-105 transition-transform">
+              Launch Studio →
             </Link>
           </div>
         </div>
       </main>
 
-      <footer className="border-t py-8 px-6 text-center text-slate-500 text-sm">
-        <p>&copy; {new Date().getFullYear()} Learncapes Inc. All rights reserved.</p>
+      <footer className="bg-gradient-to-br from-slate-800 to-blue-900 text-white py-8 px-6 text-center">
+        <p className="text-slate-200">&copy; {new Date().getFullYear()} Learncapes Inc. All rights reserved.</p>
       </footer>
     </div>
   );

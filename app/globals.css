@@ -1,1 +1,16 @@
 @import "tailwindcss";
+
+:root {
+  --background: #fffdf7;
+  --foreground: #1a1a1a;
+  --primary: #f59e0b;
+  --secondary: #fbbf24;
+  --accent: #fb923c;
+  --professional: #1e3a8a;
+}
+
+body {
+  background: linear-gradient(to bottom, #fffbeb, #ffffff, #fff7ed);
+  color: var(--foreground);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}

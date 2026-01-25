@@ -5,23 +5,23 @@ import Link from "next/link";
 
 export default function AboutPage() {
   return (
-    <div className="flex flex-col min-h-screen bg-white text-slate-900">
-      <nav className="flex items-center justify-between px-6 py-4 border-b">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 text-slate-900">
+      <nav className="flex items-center justify-between px-6 py-5 border-b-2 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 shadow-md">
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
-          <span className="font-black text-xl tracking-tighter uppercase">DesignIt</span>
+          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">DesignIt ☀</span>
         </div>
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-slate-600 hover:text-slate-900 font-medium text-sm uppercase">
+          <Link href="/" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
             Home
           </Link>
-          <Link href="/about" className="text-[#800000] font-bold text-sm uppercase">
+          <Link href="/about" className="text-amber-600 font-bold text-sm uppercase">
             About
           </Link>
-          <Link href="/contact" className="text-slate-600 hover:text-slate-900 font-medium text-sm uppercase">
+          <Link href="/contact" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
             Contact
           </Link>
-          <Link href="/" className="bg-[#800000] text-white px-6 py-2 rounded-full font-bold text-sm uppercase transition-transform hover:scale-105">
+          <Link href="/" className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-lg hover:shadow-xl">
             Launch Studio
           </Link>
         </div>
@@ -29,8 +29,8 @@ export default function AboutPage() {
 
       <main className="flex-1 px-6 py-16">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-5xl md:text-7xl font-black mb-8 leading-tight">
-            About <span className="text-[#800000]">DesignIt</span>
+          <h1 className="text-5xl md:text-7xl font-black mb-8 leading-tight text-slate-800">
+            About <span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">DesignIt</span>
           </h1>
           
           <div className="prose prose-lg max-w-none">
@@ -50,30 +50,30 @@ export default function AboutPage() {
             <section className="mb-12">
               <h2 className="text-3xl font-black mb-4 text-slate-900">What We Offer</h2>
               <div className="grid md:grid-cols-2 gap-8">
-                <div className="bg-slate-50 p-6 rounded-2xl">
-                  <h3 className="text-xl font-black mb-3 text-[#800000]">Image Tracing</h3>
-                  <p className="text-slate-600">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-6 rounded-2xl border-2 border-amber-200 shadow-md hover:shadow-lg transition-shadow">
+                  <h3 className="text-xl font-black mb-3 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">✨ Image Tracing</h3>
+                  <p className="text-slate-700 leading-relaxed">
                     Convert bitmap images into editable vector shapes with our intelligent tracing engine. 
                     Perfect for transforming sketches and photos into professional designs.
                   </p>
                 </div>
-                <div className="bg-slate-50 p-6 rounded-2xl">
-                  <h3 className="text-xl font-black mb-3 text-[#800000]">Vector Editing</h3>
-                  <p className="text-slate-600">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-6 rounded-2xl border-2 border-amber-200 shadow-md hover:shadow-lg transition-shadow">
+                  <h3 className="text-xl font-black mb-3 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">🎨 Vector Editing</h3>
+                  <p className="text-slate-700 leading-relaxed">
                     Manipulate shapes with precision using distortable control points. Create unique 
                     silhouettes and patterns with complete creative freedom.
                   </p>
                 </div>
-                <div className="bg-slate-50 p-6 rounded-2xl">
-                  <h3 className="text-xl font-black mb-3 text-[#800000]">Dress Form Tools</h3>
-                  <p className="text-slate-600">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-6 rounded-2xl border-2 border-amber-200 shadow-md hover:shadow-lg transition-shadow">
+                  <h3 className="text-xl font-black mb-3 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">👗 Dress Form Tools</h3>
+                  <p className="text-slate-700 leading-relaxed">
                     Design clothes with customizable mannequin measurements. Drape garments using 
                     neck-to-neck alignment for realistic visualization.
                   </p>
                 </div>
-                <div className="bg-slate-50 p-6 rounded-2xl">
-                  <h3 className="text-xl font-black mb-3 text-[#800000]">Drawing & Painting</h3>
-                  <p className="text-slate-600">
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 p-6 rounded-2xl border-2 border-amber-200 shadow-md hover:shadow-lg transition-shadow">
+                  <h3 className="text-xl font-black mb-3 bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">✏️ Drawing & Painting</h3>
+                  <p className="text-slate-700 leading-relaxed">
                     Add details with pen, fill, and erase tools. Work with multiple colors and layers 
                     to create rich, detailed designs.
                   </p>
@@ -85,28 +85,28 @@ export default function AboutPage() {
               <h2 className="text-3xl font-black mb-4 text-slate-900">Why Choose DesignIt?</h2>
               <ul className="space-y-4">
                 <li className="flex items-start gap-3">
-                  <span className="text-[#800000] font-black text-xl">✓</span>
+                  <span className="text-amber-500 font-black text-2xl">✓</span>
                   <div>
                     <strong className="font-black text-slate-900">No Installation Required:</strong>
                     <span className="text-slate-600"> Work directly in your browser with no downloads or plugins.</span>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-[#800000] font-black text-xl">✓</span>
+                  <span className="text-amber-500 font-black text-2xl">✓</span>
                   <div>
                     <strong className="font-black text-slate-900">Professional Results:</strong>
                     <span className="text-slate-600"> Export high-quality designs ready for production or presentation.</span>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-[#800000] font-black text-xl">✓</span>
+                  <span className="text-amber-500 font-black text-2xl">✓</span>
                   <div>
                     <strong className="font-black text-slate-900">Fast & Responsive:</strong>
                     <span className="text-slate-600"> Built with modern web technology for smooth, real-time editing.</span>
                   </div>
                 </li>
                 <li className="flex items-start gap-3">
-                  <span className="text-[#800000] font-black text-xl">✓</span>
+                  <span className="text-amber-500 font-black text-2xl">✓</span>
                   <div>
                     <strong className="font-black text-slate-900">Designer-Focused:</strong>
                     <span className="text-slate-600"> Created by designers, for designers. Every feature is built with your workflow in mind.</span>
@@ -124,7 +124,7 @@ export default function AboutPage() {
               </p>
               <p className="text-slate-600 leading-relaxed text-lg">
                 Have questions or suggestions? We'd love to hear from you. Visit our{" "}
-                <Link href="/contact" className="text-[#800000] font-bold underline hover:no-underline">
+                <Link href="/contact" className="text-amber-600 font-bold underline hover:text-orange-600 transition-colors">
                   contact page
                 </Link>{" "}
                 to get in touch.
@@ -133,15 +133,15 @@ export default function AboutPage() {
           </div>
 
           <div className="mt-16 text-center">
-            <Link href="/" className="inline-block bg-black text-white px-10 py-4 rounded-2xl font-black uppercase text-sm shadow-2xl hover:bg-[#800000] transition-colors">
-              Start Designing Now
+            <Link href="/" className="inline-block bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white px-12 py-5 rounded-full font-black uppercase text-sm shadow-2xl hover:shadow-3xl hover:scale-105 transition-all">
+              Start Designing Now →
             </Link>
           </div>
         </div>
       </main>
 
-      <footer className="border-t py-8 px-6 text-center text-slate-500 text-sm">
-        <p>&copy; {new Date().getFullYear()} Learncapes Inc. All rights reserved.</p>
+      <footer className="bg-gradient-to-br from-slate-800 to-blue-900 text-white py-8 px-6 text-center">
+        <p className="text-slate-200">&copy; {new Date().getFullYear()} Learncapes Inc. All rights reserved.</p>
       </footer>
     </div>
   );
