@@ -27,8 +27,8 @@ export async function POST(request: NextRequest) {
 
     // Send email using Resend
     const { data, error } = await resend.emails.send({
-      from: "DesignIt Contact Form <onboarding@resend.dev>", // Resend's verified domain
-      to: process.env.CONTACT_EMAIL || "info@idesignits.com",
+      from: "DesignIt Contact Form <info@idesignits.com>",
+      to: "info@idesignits.com",
       replyTo: email,
       subject: `[DesignIt Contact] ${subject}`,
       html: `
