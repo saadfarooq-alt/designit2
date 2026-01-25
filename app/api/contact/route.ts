@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send email using Resend
-    const data = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: "DesignIt Contact Form <onboarding@resend.dev>", // Resend's verified domain
       to: process.env.CONTACT_EMAIL || "info@idesignits.com",
       replyTo: email,
@@ -59,11 +59,19 @@ export async function POST(request: NextRequest) {
       `,
     });
 
+    if (error) {
+      console.error("Resend error:", error);
+      return NextResponse.json(
+        { error: "Failed to send email. Please try again later." },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
       { 
         success: true, 
         message: "Email sent successfully",
-        id: data.id 
+        id: data?.id 
       },
       { status: 200 }
     );
