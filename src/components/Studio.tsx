@@ -984,9 +984,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
         </div>
         <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 px-4 py-2 bg-white rounded-full border-2 border-amber-300 shadow-lg animate-pulse">
-          <span className="text-[10px] font-black text-amber-600">Click</span>
+          <span className="text-[10px] font-black text-slate-900">Click</span>
           <span className="w-5 h-5 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full flex items-center justify-center text-[10px] font-black">?</span>
-          <span className="text-[10px] font-black text-amber-600">for interactive tutorial</span>
+          <span className="text-[10px] font-black text-slate-900">for interactive tutorial</span>
         </div>
         <div className="flex items-center gap-1 sm:gap-2">
           <button id="dress-form-btn" onClick={() => setShowMannequinModal(true)} className="px-2 sm:px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1">
