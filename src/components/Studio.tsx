@@ -45,6 +45,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  const [tutorialDisabled, setTutorialDisabled] = useState(false);
   const [ghostCursor, setGhostCursor] = useState({ x: 0, y: 0, active: false, clicking: false });
   const [showMannequinModal, setShowMannequinModal] = useState(false);
   const [showDrapeModal, setShowDrapeModal] = useState(false);
@@ -350,6 +351,44 @@ export function Studio({ onBack }: { onBack: () => void }) {
   ];
 
   const runTutorial = async () => {
+    console.log('runTutorial called');
+    
+    // Ask user for confirmation
+    const userConfirmed = confirm("I am starting a tutorial and need to reset the canvas. Do you want to continue?");
+    console.log('User confirmed:', userConfirmed);
+    
+    if (!userConfirmed) {
+      return;
+    }
+    
+    // Reset canvas
+    console.log('Resetting canvas...');
+    setWorkspaceShapes([]);
+    setStrokes([]);
+    setContextMenu(null);
+    
+    // Show dots
+    console.log('Showing dots...');
+    setGlobalShowDots(true);
+    
+    // Unlock screen
+    console.log('Unlocking screen...');
+    setIsLocked(false);
+    
+    // Select second template (template-1)
+    console.log('Selecting template...');
+    const template1 = document.getElementById('template-1');
+    console.log('Template element:', template1);
+    if (template1) {
+      template1.click();
+    }
+    await new Promise(r => setTimeout(r, 300));
+    
+    // Disable tutorial button
+    console.log('Disabling tutorial button...');
+    setTutorialDisabled(true);
+    
+    console.log('Starting tutorial animation...');
     setGhostCursor({ x: window.innerWidth / 2, y: window.innerHeight / 2, active: true, clicking: false });
 
     for (let i = 0; i < tutorialSteps.length; i++) {
@@ -533,6 +572,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
     setTutorialStep(null);
     setGhostCursor(p => ({ ...p, active: false }));
+    setTutorialDisabled(false);
     
     // Prompt user to reset after tutorial
     setTimeout(() => {
@@ -1180,7 +1220,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
             <div className="absolute bottom-0 right-6 w-0 h-0 border-l-6 border-r-6 border-t-6 border-transparent border-t-white" style={{transform: 'translateY(100%)'}}></div>
           </div>
-          <button onClick={runTutorial} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform">?</button>
+          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
         </main>
       </div>
     </div>
