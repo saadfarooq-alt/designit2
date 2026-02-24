@@ -1,3 +1,5 @@
+// Trigger build: 2026-02-24
+
 "use client";
 
 import React, { useEffect, useState, useCallback, useRef } from "react";
@@ -1107,7 +1109,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               setSelectionRect(prev => prev ? { ...prev, x2: c.x, y2: c.y } : null);
             }
             
-            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current.lastX, c.y - penRef.current.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s)); penRef.current!.lastX = c.x; penRef.current!.lastY = c.y; } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s)); } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) })); } else if (draggingShapeId && !isLocked) { 
+            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s)); penRef.current!.lastX = c.x; penRef.current!.lastY = c.y; } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s)); } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) })); } else if (draggingShapeId && !isLocked) { 
               const shape = workspaceShapes.find(s => s.id === draggingShapeId);
               if (shape?.groupId) {
                 // Move all items in the group
