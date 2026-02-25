@@ -1963,59 +1963,137 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 setDragOffset({ x: c.x, y: c.y });
               } else if (resizingId) { 
                 const shape = workspaceShapes.find(s => s.id === resizingId);
-                if (shape?.groupId) {
-                  // Get all items in the group and calculate group center
-                  const groupShapes = workspaceShapes.filter(s => s.groupId === shape.groupId);
-                  const groupStrokes = strokes.filter(st => st.groupId === shape.groupId);
-                  
-                  // Calculate scale factor (ratio, not delta)
-                  const currentDist = Math.hypot(c.rx - shape.position.x, c.ry - shape.position.y);
-                  const prevDist = Math.hypot(dragOffset.x - shape.position.x, dragOffset.y - shape.position.y);
-                  const scaleFactor = currentDist / prevDist;
-                  
-                  // Find group bounding box center
-                  const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
-                  const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
-                  groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
-                  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
-                  const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
-                  
-                  // Resize and reposition shapes relative to center
-                  setWorkspaceShapes(prev => prev.map(s => {
-                    if (s.groupId === shape.groupId) {
-                      const dx = s.position.x - centerX;
-                      const dy = s.position.y - centerY;
-                      return {
-                        ...s,
-                        scale: Math.max(0.1, s.scale * scaleFactor),
-                        position: {
-                          x: centerX + dx * scaleFactor,
-                          y: centerY + dy * scaleFactor
-                        }
-                      };
-                    }
-                    return s;
-                  }));
-                  
-                  // Resize and reposition strokes relative to center
-                  setStrokes(prev => prev.map(st => {
-                    if (st.groupId === shape.groupId) {
-                      return {
-                        ...st,
-                        points: st.points.map(p => ({
-                          ...p,
-                          x: centerX + (p.x - centerX) * scaleFactor,
-                          y: centerY + (p.y - centerY) * scaleFactor
-                        }))
-                      };
-                    }
-                    return st;
-                  }));
-                } else {
-                  const scaleChange = (c.rx - dragOffset.x) / 400;
-                  setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + scaleChange) } : s));
+                const stroke = strokes.find(st => st.id === resizingId);
+                
+                if (shape) {
+                  if (shape.groupId) {
+                    // Get all items in the group and calculate group center
+                    const groupShapes = workspaceShapes.filter(s => s.groupId === shape.groupId);
+                    const groupStrokes = strokes.filter(st => st.groupId === shape.groupId);
+                    
+                    // Calculate scale factor (ratio, not delta)
+                    const currentDist = Math.hypot(c.x - shape.position.x, c.y - shape.position.y);
+                    const prevDist = Math.hypot(dragOffset.x - shape.position.x, dragOffset.y - shape.position.y);
+                    const scaleFactor = prevDist === 0 ? 1 : currentDist / prevDist;
+                    
+                    // Find group bounding box center
+                    const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
+                    const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
+                    groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
+                    const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                    const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                    
+                    // Resize and reposition shapes relative to center
+                    setWorkspaceShapes(prev => prev.map(s => {
+                      if (s.groupId === shape.groupId) {
+                        const dx = s.position.x - centerX;
+                        const dy = s.position.y - centerY;
+                        return {
+                          ...s,
+                          scale: Math.max(0.1, s.scale * scaleFactor),
+                          position: {
+                            x: centerX + dx * scaleFactor,
+                            y: centerY + dy * scaleFactor
+                          }
+                        };
+                      }
+                      return s;
+                    }));
+                    
+                    // Resize and reposition strokes relative to center
+                    setStrokes(prev => prev.map(st => {
+                      if (st.groupId === shape.groupId) {
+                        return {
+                          ...st,
+                          points: st.points.map(p => ({
+                            ...p,
+                            x: centerX + (p.x - centerX) * scaleFactor,
+                            y: centerY + (p.y - centerY) * scaleFactor
+                          }))
+                        };
+                      }
+                      return st;
+                    }));
+                  } else {
+                    const scaleChange = (c.x - dragOffset.x) / 400;
+                    setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + scaleChange) } : s));
+                  }
+                } else if (stroke) {
+                  if (stroke.groupId) {
+                    // Get all items in the group and calculate group center
+                    const groupShapes = workspaceShapes.filter(s => s.groupId === stroke.groupId);
+                    const groupStrokes = strokes.filter(st => st.groupId === stroke.groupId);
+                    
+                    // Find group bounding box center
+                    const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
+                    const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
+                    groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
+                    const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                    const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                    
+                    // Calculate scale factor (ratio, not delta)
+                    const currentDist = Math.hypot(c.x - centerX, c.y - centerY);
+                    const prevDist = Math.hypot(dragOffset.x - centerX, dragOffset.y - centerY);
+                    const scaleFactor = prevDist === 0 ? 1 : currentDist / prevDist;
+                    
+                    // Resize and reposition shapes relative to center
+                    setWorkspaceShapes(prev => prev.map(s => {
+                      if (s.groupId === stroke.groupId) {
+                        const dx = s.position.x - centerX;
+                        const dy = s.position.y - centerY;
+                        return {
+                          ...s,
+                          scale: Math.max(0.1, s.scale * scaleFactor),
+                          position: {
+                            x: centerX + dx * scaleFactor,
+                            y: centerY + dy * scaleFactor
+                          }
+                        };
+                      }
+                      return s;
+                    }));
+                    
+                    // Resize and reposition strokes relative to center
+                    setStrokes(prev => prev.map(st => {
+                      if (st.groupId === stroke.groupId) {
+                        return {
+                          ...st,
+                          points: st.points.map(p => ({
+                            ...p,
+                            x: centerX + (p.x - centerX) * scaleFactor,
+                            y: centerY + (p.y - centerY) * scaleFactor
+                          }))
+                        };
+                      }
+                      return st;
+                    }));
+                  } else {
+                    // Resize single stroke
+                    const allX = stroke.points.map(p => p.x);
+                    const allY = stroke.points.map(p => p.y);
+                    const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                    const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                    
+                    const currentDist = Math.hypot(c.x - centerX, c.y - centerY);
+                    const prevDist = Math.hypot(dragOffset.x - centerX, dragOffset.y - centerY);
+                    const scaleFactor = prevDist === 0 ? 1 : currentDist / prevDist;
+                    
+                    setStrokes(prev => prev.map(st => {
+                      if (st.id === resizingId) {
+                        return {
+                          ...st,
+                          points: st.points.map(p => ({
+                            ...p,
+                            x: centerX + (p.x - centerX) * scaleFactor,
+                            y: centerY + (p.y - centerY) * scaleFactor
+                          }))
+                        };
+                      }
+                      return st;
+                    }));
+                  }
                 }
-                setDragOffset({ x: c.rx, y: c.ry }); 
+                setDragOffset({ x: c.x, y: c.y }); 
               } }} onPointerUp={(e) => { 
               // Show context menu for selection rectangle only on right-click
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
@@ -2065,7 +2143,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                           }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                           {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
-                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
+                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                         </>
                       ) : (
                         <>
@@ -2113,7 +2191,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           )}
                           {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
                           {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
-                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
+                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                         </>
                       )}
                     </g>
@@ -2152,6 +2230,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
                     ))}
+                    {globalShowDots && (() => {
+                      const allX = s.points.map(p => p.x);
+                      const allY = s.points.map(p => p.y);
+                      const maxX = Math.max(...allX);
+                      const maxY = Math.max(...allY);
+                      return (
+                        <rect x={maxX + 10} y={maxY + 10} width={45} height={45} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                      );
+                    })()}
                   </g>
                 ))}
               </svg>
