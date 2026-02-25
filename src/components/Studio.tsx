@@ -788,7 +788,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setContextMenu(null);
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
-  const pasteFromClipboard = useCallback(() => {
+  const pasteFromSelection = useCallback(() => {
     if (!clipboard || (!clipboard.shapes.length && !clipboard.strokes.length)) return;
     saveForUndo();
     
@@ -936,6 +936,81 @@ export function Studio({ onBack }: { onBack: () => void }) {
     return close ? d + " Z" : d;
   };
 
+  // Export current workspace as PNG/JPG by serializing the SVG, inlining images, and drawing to a canvas
+  const downloadImage = async (type: 'png' | 'jpg' = 'png') => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+    const svgEl = workspaceRef.current;
+    if (!svgEl) return;
+
+    console.log('[downloadImage] start', type);
+
+    // Clone and inline external images to avoid CORS/blob issues
+    const clone = svgEl.cloneNode(true) as SVGSVGElement;
+    clone.querySelectorAll('circle[data-control-dot]').forEach(d => d.remove());
+    console.log('[downloadImage] cloned svg');
+
+    const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
+    let inlined = 0;
+    for (const imgEl of images) {
+      const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+      if (!href) continue;
+      try {
+        const res = await fetch(href, { mode: 'cors' });
+        const blob = await res.blob();
+        const reader = new FileReader();
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+        imgEl.setAttribute('href', dataUrl);
+        inlined++;
+      } catch (e) {
+        console.warn('[downloadImage] failed to inline', href, e);
+      }
+    }
+    console.log('[downloadImage] inlined images', inlined);
+
+    const serializer = new XMLSerializer();
+    let source = serializer.serializeToString(clone);
+    if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
+
+    const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      console.log('[downloadImage] image loaded for canvas draw');
+      const bbox = svgEl.getBoundingClientRect();
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bbox.width || img.width));
+      canvas.height = Math.max(1, Math.round(bbox.height || img.height));
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { URL.revokeObjectURL(url); console.error('[downloadImage] no canvas context'); return; }
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      const mime = type === 'jpg' ? 'image/jpeg' : 'image/png';
+      const dataUrl = canvas.toDataURL(mime);
+      console.log('[downloadImage] created dataUrl', dataUrl.substring(0, 40));
+      const link = document.createElement('a');
+      link.download = `design.${type}`;
+      link.href = dataUrl;
+      link.click();
+    };
+    img.onerror = (e) => {
+      URL.revokeObjectURL(url);
+      console.error('[downloadImage] image load error', e);
+      alert('Failed to render SVG for export. Check console for details.');
+    };
+    img.src = url;
+  };
+
+  function pasteFromClipboard() {
+    // TODO: Implement clipboard paste logic
+    console.log('Paste from clipboard triggered');
+  }
+
   if (!mounted) return null;
 
   return (
@@ -997,6 +1072,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </button>
           <button id="undo-btn" onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100">Undo</button>
           <button id="reset-btn" onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100">Reset</button>
+          {/* <button onClick={downloadSVG} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100">Download</button> */}
           <button id="dots-btn" onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 text-yellow-700' : 'bg-white text-slate-400'}`}>Dots</button>
           <button id="lock-btn" onClick={() => setIsLocked(!isLocked)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${isLocked ? 'bg-sky-500 text-white' : 'bg-white text-sky-500'}`}>Lock</button>
         </div>
@@ -1101,7 +1177,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
             }
             
             if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
-            if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]); penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid }; } 
+            if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]);
+              penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid };
+              e.currentTarget.setPointerCapture(e.pointerId);
+              return;
+            } 
           }} onPointerMove={(e) => { const c = getCoords(e); 
             
             // Update selection rectangle
@@ -1109,122 +1189,144 @@ export function Studio({ onBack }: { onBack: () => void }) {
               setSelectionRect(prev => prev ? { ...prev, x2: c.x, y2: c.y } : null);
             }
             
-            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s)); penRef.current!.lastX = c.x; penRef.current!.lastY = c.y; } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s)); } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) })); } else if (draggingShapeId && !isLocked) { 
-              const shape = workspaceShapes.find(s => s.id === draggingShapeId);
-              if (shape?.groupId) {
-                // Move all items in the group
-                const deltaX = c.x - dragOffset.x - shape.position.x;
-                const deltaY = c.y - dragOffset.y - shape.position.y;
-                setWorkspaceShapes(prev => prev.map(s => s.groupId === shape.groupId ? { ...s, position: { x: s.position.x + deltaX, y: s.position.y + deltaY } } : s));
-                setStrokes(prev => prev.map(st => st.groupId === shape.groupId ? { ...st, points: st.points.map(p => ({ ...p, x: p.x + deltaX, y: p.y + deltaY })) } : st));
-              } else {
-                setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
-              }
-            } else if (resizingId) { 
-              const shape = workspaceShapes.find(s => s.id === resizingId);
-              if (shape?.groupId) {
-                // Get all items in the group and calculate group center
-                const groupShapes = workspaceShapes.filter(s => s.groupId === shape.groupId);
-                const groupStrokes = strokes.filter(st => st.groupId === shape.groupId);
-                
-                // Calculate scale factor (ratio, not delta)
-                const currentDist = Math.hypot(c.rx - shape.position.x, c.ry - shape.position.y);
-                const prevDist = Math.hypot(dragOffset.x - shape.position.x, dragOffset.y - shape.position.y);
-                const scaleFactor = currentDist / prevDist;
-                
-                // Find group bounding box center
-                const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
-                const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
-                groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
-                const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
-                const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
-                
-                // Resize and reposition shapes relative to center
-                setWorkspaceShapes(prev => prev.map(s => {
-                  if (s.groupId === shape.groupId) {
-                    const dx = s.position.x - centerX;
-                    const dy = s.position.y - centerY;
-                    return {
-                      ...s,
-                      scale: Math.max(0.1, s.scale * scaleFactor),
-                      position: {
-                        x: centerX + dx * scaleFactor,
-                        y: centerY + dy * scaleFactor
-                      }
-                    };
-                  }
-                  return s;
-                }));
-                
-                // Resize and reposition strokes relative to center
-                setStrokes(prev => prev.map(st => {
-                  if (st.groupId === shape.groupId) {
-                    return {
-                      ...st,
-                      points: st.points.map(p => ({
-                        ...p,
-                        x: centerX + (p.x - centerX) * scaleFactor,
-                        y: centerY + (p.y - centerY) * scaleFactor
-                      }))
-                    };
-                  }
-                  return st;
-                }));
-              } else {
-                const scaleChange = (c.rx - dragOffset.x) / 400;
-                setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + scaleChange) } : s));
-              }
-              setDragOffset({ x: c.rx, y: c.ry }); 
-            } }} onPointerUp={(e) => { 
-            // Show context menu for selection rectangle
-            if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
-              setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
-            } else {
-              setSelectionRect(null);
-            }
-            isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
-            <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
-              if (selectionRect) {
-                e.preventDefault();
-                e.stopPropagation();
-                const rect = { x: Math.min(selectionRect.x1, selectionRect.x2), y: Math.min(selectionRect.y1, selectionRect.y2), width: Math.abs(selectionRect.x2 - selectionRect.x1), height: Math.abs(selectionRect.y2 - selectionRect.y1) };
-                const c = getCoords(e);
-                if (c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height) {
-                  setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
+                penRef.current!.lastX = c.x;
+                penRef.current!.lastY = c.y;
+              } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
+              } else if (draggingDot) { setWorkspaceShapes(prev => prev.map(s => s.id !== draggingDot.shapeId ? s : { ...s, dots: s.dots.map(d => d.id === draggingDot.dotId ? { ...d, x: (c.x - s.position.x)/s.scale, y: (c.y - s.position.y)/s.scale } : d) }));
+              } else if (draggingShapeId && !isLocked) { 
+                const shape = workspaceShapes.find(s => s.id === draggingShapeId);
+                if (shape?.groupId) {
+                  // Move all items in the group
+                  const deltaX = c.x - dragOffset.x - shape.position.x;
+                  const deltaY = c.y - dragOffset.y - shape.position.y;
+                  setWorkspaceShapes(prev => prev.map(s => s.groupId === shape.groupId ? { ...s, position: { x: s.position.x + deltaX, y: s.position.y + deltaY } } : s));
+                  setStrokes(prev => prev.map(st => st.groupId === shape.groupId ? { ...st, points: st.points.map(p => ({ ...p, x: p.x + deltaX, y: p.y + deltaY })) } : st));
+                } else {
+                  setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
                 }
+              } else if (resizingId) { 
+                const shape = workspaceShapes.find(s => s.id === resizingId);
+                if (shape?.groupId) {
+                  // Get all items in the group and calculate group center
+                  const groupShapes = workspaceShapes.filter(s => s.groupId === shape.groupId);
+                  const groupStrokes = strokes.filter(st => st.groupId === shape.groupId);
+                  
+                  // Calculate scale factor (ratio, not delta)
+                  const currentDist = Math.hypot(c.rx - shape.position.x, c.ry - shape.position.y);
+                  const prevDist = Math.hypot(dragOffset.x - shape.position.x, dragOffset.y - shape.position.y);
+                  const scaleFactor = currentDist / prevDist;
+                  
+                  // Find group bounding box center
+                  const allX = groupShapes.flatMap(s => s.dots.map(d => s.position.x + d.x * s.scale));
+                  const allY = groupShapes.flatMap(s => s.dots.map(d => s.position.y + d.y * s.scale));
+                  groupStrokes.forEach(st => st.points.forEach(p => { allX.push(p.x); allY.push(p.y); }));
+                  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                  const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                  
+                  // Resize and reposition shapes relative to center
+                  setWorkspaceShapes(prev => prev.map(s => {
+                    if (s.groupId === shape.groupId) {
+                      const dx = s.position.x - centerX;
+                      const dy = s.position.y - centerY;
+                      return {
+                        ...s,
+                        scale: Math.max(0.1, s.scale * scaleFactor),
+                        position: {
+                          x: centerX + dx * scaleFactor,
+                          y: centerY + dy * scaleFactor
+                        }
+                      };
+                    }
+                    return s;
+                  }));
+                  
+                  // Resize and reposition strokes relative to center
+                  setStrokes(prev => prev.map(st => {
+                    if (st.groupId === shape.groupId) {
+                      return {
+                        ...st,
+                        points: st.points.map(p => ({
+                          ...p,
+                          x: centerX + (p.x - centerX) * scaleFactor,
+                          y: centerY + (p.y - centerY) * scaleFactor
+                        }))
+                      };
+                    }
+                    return st;
+                  }));
+                } else {
+                  const scaleChange = (c.rx - dragOffset.x) / 400;
+                  setWorkspaceShapes(prev => prev.map(s => s.id === resizingId ? { ...s, scale: Math.max(0.1, s.scale + scaleChange) } : s));
+                }
+                setDragOffset({ x: c.rx, y: c.ry }); 
+              } }} onPointerUp={(e) => { 
+              // Show context menu for selection rectangle
+              if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
+                setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+              } else {
+                setSelectionRect(null);
               }
-            }}>
-              {selectionRect && (
-                <rect 
-                  x={Math.min(selectionRect.x1, selectionRect.x2)} 
-                  y={Math.min(selectionRect.y1, selectionRect.y2)} 
-                  width={Math.abs(selectionRect.x2 - selectionRect.x1)} 
-                  height={Math.abs(selectionRect.y2 - selectionRect.y1)} 
-                  fill="rgba(59, 130, 246, 0.1)" 
-                  stroke="#3b82f6" 
-                  strokeWidth={2} 
-                  strokeDasharray="5,5"
-                  style={{ cursor: 'context-menu' }}
-                />
-              )}
-              {strokes.map(s => (<g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}><path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />{globalShowDots && s.points.map((p) => <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} /> )}</g>))}
-              {workspaceShapes.map((shape, shapeIdx) => (<g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>{shape.isMannequin ? (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => { 
-                if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} />{globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>) : (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath><mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}><rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />{shape.erasedPaths && shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}</mask></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => { 
-                if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; } if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} /><path d={generatePathData(shape.dots, true)} fill={shape.fillColor || "transparent"} pointerEvents="none" />{globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}{globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>)}</g>))}
-            </svg>
-          </div>
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] lg:w-auto flex items-center gap-3 p-3 bg-white/40 backdrop-blur-xl rounded-[2rem] shadow-xl overflow-x-auto">
-            {templates.map((u, i) => <img key={i} id={`template-${i}`} src={u} onClick={() => setSelectedImage(u)} className={`h-12 w-12 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-105' : 'border-transparent opacity-50'}`} /> )}
-          </div>
-          <div className="lg:hidden absolute bottom-20 right-2 bg-white rounded-full border-2 border-amber-300 shadow-xl px-3 py-2 animate-pulse">
-            <div className="flex items-center gap-1">
-              <span className="text-[9px] font-black text-amber-600">Click ? for tutorial</span>
+              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
+              <div className="mb-2 flex justify-end">
+  <button
+    onClick={() => downloadImage('jpg')}
+    className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 transition"
+  >
+    Download
+  </button>
+</div>
+              <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
+                if (selectionRect) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const rect = { x: Math.min(selectionRect.x1, selectionRect.x2), y: Math.min(selectionRect.y1, selectionRect.y2), width: Math.abs(selectionRect.x2 - selectionRect.x1), height: Math.abs(selectionRect.y2 - selectionRect.y1) };
+                  const c = getCoords(e);
+                  if (c.x >= rect.x && c.x <= rect.x + rect.width && c.y >= rect.y && c.y <= rect.y + rect.height) {
+                    setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+                  }
+                }
+              }}>
+                {selectionRect && (
+                  <rect 
+                    x={Math.min(selectionRect.x1, selectionRect.x2)} 
+                    y={Math.min(selectionRect.y1, selectionRect.y2)} 
+                    width={Math.abs(selectionRect.x2 - selectionRect.x1)} 
+                    height={Math.abs(selectionRect.y2 - selectionRect.y1)} 
+                    fill="rgba(59, 130, 246, 0.1)" 
+                    stroke="#3b82f6" 
+                    strokeWidth={2} 
+                    strokeDasharray="5,5"
+                    style={{ cursor: 'context-menu' }}
+                  />
+                )}
+                {workspaceShapes.map((shape, shapeIdx) => (
+                  <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>{shape.isMannequin ? (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => { 
+                  if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} />{globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>) : (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>{shape.erasedPaths && shape.erasedPaths.length > 0 && <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}><rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />{shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}</mask>}</defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => { 
+                  if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; } if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} /><path d={generatePathData(shape.dots, true)} fill={shape.fillColor || "transparent"} pointerEvents="none" />{globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}{globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>)}</g>
+                ))}
+                {strokes.map(s => (
+                  <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                    <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />
+                    {globalShowDots && s.points.map((p) => (
+                      <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
+                    ))}
+                  </g>
+                ))}
+              </svg>
             </div>
-            <div className="absolute bottom-0 right-6 w-0 h-0 border-l-6 border-r-6 border-t-6 border-transparent border-t-white" style={{transform: 'translateY(100%)'}}></div>
-          </div>
-          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
-        </main>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] lg:w-auto flex items-center gap-3 p-3 bg-white/40 backdrop-blur-xl rounded-[2rem] shadow-xl overflow-x-auto">
+              {templates.map((u, i) => <img key={i} id={`template-${i}`} src={u} onClick={() => setSelectedImage(u)} className={`h-12 w-12 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-105' : 'border-transparent opacity-50'}`} /> )}
+            </div>
+            <div className="lg:hidden absolute bottom-20 right-2 bg-white rounded-full border-2 border-amber-300 shadow-xl px-3 py-2 animate-pulse">
+              <div className="flex items-center gap-1">
+                <span className="text-[9px] font-black text-amber-600">Click ? for tutorial</span>
+              </div>
+              <div className="absolute bottom-0 right-6 w-0 h-0 border-l-6 border-r-6 border-t-6 border-transparent border-t-white" style={{transform: 'translateY(100%)'}}></div>
+            </div>
+            <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
+          </main>
+        </div>
       </div>
-    </div>
   );
 }
