@@ -16,6 +16,8 @@ interface DistortableShape {
   scale: number;
   showDots: boolean;
   fillColor?: string;
+  baseFill?: string;
+  fillOpacity?: number;
   erasedPaths: string[];
   isMannequin?: boolean;
   isGarment?: boolean;
@@ -27,6 +29,8 @@ interface Stroke {
   color: string; 
   width: number; 
   fillColor?: string;
+  baseFill?: string;
+  fillOpacity?: number;
   groupId?: string;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
@@ -43,6 +47,17 @@ interface MannequinMeasurements {
 }
 
 export function Studio({ onBack }: { onBack: () => void }) {
+  // helper: convert hex color + alpha (0..1) to rgba() string
+  const hexToRgba = (hex: string, alpha = 1) => {
+    if (!hex) return `rgba(0,0,0,${alpha})`;
+    const h = hex.replace('#','');
+    const normalized = h.length === 3 ? h.split('').map(c=>c+c).join('') : h;
+    const bigint = parseInt(normalized, 16);
+    const r = (bigint >> 16) & 255;
+    const g = (bigint >> 8) & 255;
+    const b = bigint & 255;
+    return `rgba(${r},${g},${b},${alpha})`;
+  };
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -81,7 +96,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
-  const [activeColor, setActiveColor] = useState("#27EEF5"); 
+  const [activeColor, setActiveColor] = useState("#27EEF5");
+  const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
+  const [showColorPanel, setShowColorPanel] = useState(false);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -450,9 +467,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
           setStrokes(p => p.map(s => s.id === sid ? { ...s, points: [...s.points, { id: `pt-${j}`, x: newX, y: newY }] } : s));
         }
       }
-      else if (step.action === "fill_shape") {
+        else if (step.action === "fill_shape") {
         saveForUndo();
-        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, fillColor: activeColor } : s));
+        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, baseFill: '#ffffff', fillColor: hexToRgba(activeColor, activeFillOpacity) } : s));
       }
       else if (step.action === "erase_action") {
         saveForUndo();
@@ -1123,6 +1140,15 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
         </aside>
         <main className="flex-1 bg-[#F9F9FB] relative overflow-hidden">
+          {/* Top toolbar */}
+          <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
+            <button
+              onClick={() => downloadImage('jpg')}
+              className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 transition"
+            >
+              Download
+            </button>
+          </div>
           {ghostCursor.active && (
             <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
               <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
@@ -1164,9 +1190,21 @@ export function Studio({ onBack }: { onBack: () => void }) {
           )}
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
             {(["cursor", "pen", "fill", "erase"] as const).map((t) => (<button key={t} id={`${t}-tool`} onClick={() => setActiveTool(t)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400'}`}><span className="text-[10px] font-black uppercase">{t.charAt(0)}</span></button>))}
-            <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-8 h-8 rounded-lg mt-2" />
+            <div className="relative mt-2">
+              <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
+              {showColorPanel && (
+                <div className="absolute left-10 top-0 mt-0 p-3 bg-white rounded shadow-xl z-50 w-40">
+                  <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-full h-10 p-0" />
+                  <div className="flex items-center gap-2 mt-2">
+                    <label className="text-[10px] font-black uppercase text-slate-600">Fill</label>
+                    <input id="fill-opacity" type="range" min={0} max={100} value={Math.round(activeFillOpacity * 100)} onChange={e => setActiveFillOpacity(parseInt(e.target.value, 10) / 100)} className="flex-1" />
+                    <span className="text-[10px] font-bold">{Math.round(activeFillOpacity * 100)}%</span>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
-          <div ref={canvasRef} className="w-full h-full p-4 lg:p-20" onPointerDown={(e) => { 
+          <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] p-2 lg:p-8" onPointerDown={(e) => { 
             // REST OF EXISTING LOGIC
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
@@ -1268,14 +1306,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 setSelectionRect(null);
               }
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
-              <div className="mb-2 flex justify-end">
-  <button
-    onClick={() => downloadImage('jpg')}
-    className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 transition"
-  >
-    Download
-  </button>
-</div>
+              
               <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
                 if (selectionRect) {
                   e.preventDefault();
@@ -1300,14 +1331,50 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     style={{ cursor: 'context-menu' }}
                   />
                 )}
-                {workspaceShapes.map((shape, shapeIdx) => (
-                  <g key={shape.id} transform={`translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>{shape.isMannequin ? (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath></defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => { 
-                  if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} />{globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>) : (<><defs><clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>{shape.erasedPaths && shape.erasedPaths.length > 0 && <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}><rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />{shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}</mask>}</defs><image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => { 
-                  if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? {...s, fillColor: activeColor} : s)); return; } if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); } }} /><path d={generatePathData(shape.dots, true)} fill={shape.fillColor || "transparent"} pointerEvents="none" />{globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}{globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}{globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}</>)}</g>
-                ))}
+                {workspaceShapes.map((shape, shapeIdx) => {
+                  const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`;
+                  return (
+                    <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>
+                      {shape.isMannequin ? (
+                        <>
+                          <defs>
+                            <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
+                          </defs>
+                          <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
+                            if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
+                          }} />
+                          {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
+                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
+                        </>
+                      ) : (
+                        <>
+                          <defs>
+                            <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
+                            {shape.erasedPaths && shape.erasedPaths.length > 0 && (
+                              <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}>
+                                <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
+                                {shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}
+                              </mask>
+                            )}
+                          </defs>
+                          <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
+                            if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, baseFill: '#ffffff', fillColor: hexToRgba(activeColor, activeFillOpacity) } : s)); return; }
+                            if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
+                          }} />
+                          {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
+                          {shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />}
+                          {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
+                          {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
+                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
+                        </>
+                      )}
+                    </g>
+                  );
+                })}
                 {strokes.map(s => (
                   <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
-                    <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, fillColor: activeColor } : st)); } }} />
+                    {s.baseFill && <path d={generatePathData(s.points)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
+                    <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, baseFill: '#ffffff', fillColor: hexToRgba(activeColor, activeFillOpacity) } : st)); } }} />
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
                     ))}
@@ -1315,9 +1382,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 ))}
               </svg>
             </div>
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-[90%] lg:w-auto flex items-center gap-3 p-3 bg-white/40 backdrop-blur-xl rounded-[2rem] shadow-xl overflow-x-auto">
-              {templates.map((u, i) => <img key={i} id={`template-${i}`} src={u} onClick={() => setSelectedImage(u)} className={`h-12 w-12 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-105' : 'border-transparent opacity-50'}`} /> )}
-            </div>
+            {/* templates moved below main to keep them separate from the workspace */}
             <div className="lg:hidden absolute bottom-20 right-2 bg-white rounded-full border-2 border-amber-300 shadow-xl px-3 py-2 animate-pulse">
               <div className="flex items-center gap-1">
                 <span className="text-[9px] font-black text-amber-600">Click ? for tutorial</span>
@@ -1326,6 +1391,19 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
             <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
           </main>
+
+          {/* Templates bar - separate from workspace */}
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] lg:w-auto flex items-center gap-3 p-3 bg-white/60 backdrop-blur-xl rounded-[2rem] shadow-xl z-50 overflow-x-auto">
+            {templates.map((u, i) => (
+              <img
+                key={i}
+                id={`template-${i}`}
+                src={u}
+                onClick={() => setSelectedImage(u)}
+                className={`h-12 w-12 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-105' : 'border-transparent opacity-50'}`}
+              />
+            ))}
+          </div>
         </div>
       </div>
   );
