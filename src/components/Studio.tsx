@@ -327,6 +327,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [draggingDot, setDraggingDot] = useState<{ shapeId: string; dotId: string } | null>(null);
   const [draggingStrokeDot, setDraggingStrokeDot] = useState<{ strokeId: string; dotId: string } | null>(null);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
+  const [draggingStrokeId, setDraggingStrokeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [clipboard, setClipboard] = useState<{ shapes: DistortableShape[]; strokes: Stroke[] } | null>(null);
@@ -1818,6 +1819,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 } else {
                   setWorkspaceShapes(prev => prev.map(s => s.id === draggingShapeId ? { ...s, position: { x: c.x - dragOffset.x, y: c.y - dragOffset.y } } : s));
                 }
+              } else if (draggingStrokeId && !isLocked) {
+                const stroke = strokes.find(st => st.id === draggingStrokeId);
+                if (stroke?.groupId) {
+                  // Move all items in the group
+                  const deltaX = c.x - dragOffset.x;
+                  const deltaY = c.y - dragOffset.y;
+                  setWorkspaceShapes(prev => prev.map(s => s.groupId === stroke.groupId ? { ...s, position: { x: s.position.x + deltaX, y: s.position.y + deltaY } } : s));
+                  setStrokes(prev => prev.map(st => st.groupId === stroke.groupId ? { ...st, points: st.points.map(p => ({ ...p, x: p.x + deltaX, y: p.y + deltaY })) } : st));
+                } else {
+                  const deltaX = c.x - dragOffset.x;
+                  const deltaY = c.y - dragOffset.y;
+                  setStrokes(prev => prev.map(st => st.id === draggingStrokeId ? { ...st, points: st.points.map(p => ({ ...p, x: p.x + deltaX, y: p.y + deltaY })) } : st));
+                }
+                setDragOffset({ x: c.x, y: c.y });
               } else if (resizingId) { 
                 const shape = workspaceShapes.find(s => s.id === resizingId);
                 if (shape?.groupId) {
@@ -1882,7 +1897,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               } else {
                 setSelectionRect(null);
               }
-              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
+              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
               
               <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
                 if (selectionRect) {
@@ -2001,10 +2016,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             )}
                           </pattern>
                         </defs>
-                            <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } }} />
+                            <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
                       </>
                     ) : (
-                      <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } }} />
+                      <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
                     )}
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
