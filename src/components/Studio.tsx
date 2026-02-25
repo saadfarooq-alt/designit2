@@ -14,6 +14,7 @@ interface DistortableShape {
   dims: { width: number; height: number };
   position: { x: number; y: number };
   scale: number;
+  rotation?: number;
   showDots: boolean;
   fillColor?: string;
   clothType?: string;
@@ -29,6 +30,7 @@ interface Stroke {
   points: { id: string; x: number; y: number }[]; 
   color: string; 
   width: number; 
+  rotation?: number;
   fillColor?: string;
   clothType?: string;
   baseFill?: string;
@@ -420,6 +422,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
   const [draggingStrokeId, setDraggingStrokeId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
+  const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [clipboard, setClipboard] = useState<{ shapes: DistortableShape[]; strokes: Stroke[] } | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
@@ -2136,6 +2139,24 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   }
                 }
                 setDragOffset({ x: c.x, y: c.y }); 
+              } else if (rotatingId) {
+                const shape = workspaceShapes.find(s => s.id === rotatingId);
+                const stroke = strokes.find(st => st.id === rotatingId);
+                
+                if (shape) {
+                  const centerX = shape.position.x + (shape.dims.width / 2) * shape.scale;
+                  const centerY = shape.position.y + (shape.dims.height / 2) * shape.scale;
+                  const angle = Math.atan2(c.y - centerY, c.x - centerX) * (180 / Math.PI);
+                  // Add 90 degrees because the handle is at the top
+                  setWorkspaceShapes(prev => prev.map(s => s.id === rotatingId ? { ...s, rotation: angle + 90 } : s));
+                } else if (stroke) {
+                  const allX = stroke.points.map(p => p.x);
+                  const allY = stroke.points.map(p => p.y);
+                  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                  const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                  const angle = Math.atan2(c.y - centerY, c.x - centerX) * (180 / Math.PI);
+                  setStrokes(prev => prev.map(st => st.id === rotatingId ? { ...st, rotation: angle + 90 } : st));
+                }
               } }} onPointerUp={(e) => { 
               // Show context menu for selection rectangle only on right-click
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
@@ -2145,7 +2166,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               } else {
                 setSelectionRect(null);
               }
-              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); }}>
+              isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
               
               <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
                 if (selectionRect) {
@@ -2172,7 +2193,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   />
                 )}
                 {workspaceShapes.map((shape, shapeIdx) => {
-                  const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`;
+                  const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
                   return (
                     <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
                       {shape.isMannequin ? (
@@ -2186,6 +2207,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                           {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                           {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
+                          {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                         </>
                       ) : (
                         <>
@@ -2234,13 +2256,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
                           {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                           {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
+                          {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                         </>
                       )}
                     </g>
                   );
                 })}
-                {strokes.map(s => (
-                  <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                {strokes.map(s => {
+                  const allX = s.points.map(p => p.x);
+                  const allY = s.points.map(p => p.y);
+                  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                  const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                  const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
+                  return (
+                  <g key={s.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                     {s.baseFill && <path d={generatePathData(s.points, s.closed ?? false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
                     {s.fillColor && s.clothType && s.clothType !== 'solid' ? (
                       <>
@@ -2264,10 +2293,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             )}
                           </pattern>
                         </defs>
-                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.color} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
                       </>
                     ) : (
-                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
+                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
                     )}
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
@@ -2277,12 +2306,19 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       const allY = s.points.map(p => p.y);
                       const maxX = Math.max(...allX);
                       const maxY = Math.max(...allY);
+                      const minX = Math.min(...allX);
+                      const minY = Math.min(...allY);
+                      const centerX = (minX + maxX) / 2;
                       return (
-                        <rect x={maxX + 10} y={maxY + 10} width={45} height={45} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                        <>
+                          <rect x={maxX + 10} y={maxY + 10} width={45} height={45} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                          <circle cx={centerX} cy={minY - 30} r={20} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(s.id); setDragOffset({ x: c.x, y: c.y }); }} />
+                        </>
                       );
                     })()}
                   </g>
-                ))}
+                  );
+                })}
               </svg>
             </div>
             {/* templates moved below main to keep them separate from the workspace */}
