@@ -263,7 +263,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
       'denim', 'dobby', 'elastane', 'faux_fur', 'felt', 'flannel', 'flannelette', 'fleece', 'french_terry',
       'gabardine', 'georgette', 'gingham', 'goretex', 'grosgrain', 'hemp', 'hessian', 'jacquard',
       'jersey_knit', 'jute', 'lace', 'lame', 'leather', 'linen', 'lycra', 'lyocell', 'microfiber',
-      'moleskin', 'muslin', 'neoprene', 'organza', 'rib_knit', 'spandex', 'suede', 'taffeta',
+      'moleskin', 'muslin', 'neoprene', 'organza', 'rib_knit', 'satin', 'spandex', 'suede', 'taffeta',
       'terrycloth', 'ticking', 'toile', 'tulle', 'velvet', 'wool'
     ];
     
@@ -274,6 +274,94 @@ export function Studio({ onBack }: { onBack: () => void }) {
     // Fallback to generated texture
     return null;
   };
+
+  const fabricOptions = [
+    { value: "solid", label: "Solid" },
+    { value: "acetate", label: "Acetate" },
+    { value: "bamboo", label: "Bamboo Fabric" },
+    { value: "batik", label: "Batik" },
+    { value: "boucle", label: "Boucle" },
+    { value: "broadcloth", label: "Broadcloth" },
+    { value: "brocade", label: "Brocade" },
+    { value: "buckram", label: "Buckram" },
+    { value: "calico", label: "Calico" },
+    { value: "cambric", label: "Cambric" },
+    { value: "canvas", label: "Canvas" },
+    { value: "cashmere", label: "Cashmere" },
+    { value: "challis", label: "Challis" },
+    { value: "cheesecloth", label: "Cheesecloth" },
+    { value: "chenille", label: "Chenille" },
+    { value: "chiffon", label: "Chiffon" },
+    { value: "chintz", label: "Chintz" },
+    { value: "coir", label: "Coir" },
+    { value: "corduroy", label: "Corduroy" },
+    { value: "cotton", label: "Cotton" },
+    { value: "crepe", label: "Crepe" },
+    { value: "crepe de chine", label: "Crepe de Chine" },
+    { value: "damask", label: "Damask" },
+    { value: "denim", label: "Denim" },
+    { value: "dobby", label: "Dobby" },
+    { value: "duck", label: "Duck" },
+    { value: "elastane", label: "Elastane" },
+    { value: "faux fur", label: "Faux Fur" },
+    { value: "felt", label: "Felt" },
+    { value: "flannel", label: "Flannel" },
+    { value: "flannelette", label: "Flannelette" },
+    { value: "fleece", label: "Fleece" },
+    { value: "gabardine", label: "Gabardine" },
+    { value: "georgette", label: "Georgette" },
+    { value: "gingham", label: "Gingham" },
+    { value: "goretex", label: "Goretex" },
+    { value: "grosgrain", label: "Grosgrain" },
+    { value: "hemp", label: "Hemp" },
+    { value: "hessian", label: "Hessian" },
+    { value: "jacquard", label: "Jacquard" },
+    { value: "jersey knit", label: "Jersey Knit" },
+    { value: "jute", label: "Jute" },
+    { value: "lace", label: "Lace" },
+    { value: "lame", label: "Lame" },
+    { value: "leather", label: "Leather" },
+    { value: "linen", label: "Linen" },
+    { value: "lyocell", label: "Lyocell" },
+    { value: "lycra", label: "Lycra" },
+    { value: "microfiber", label: "Microfiber" },
+    { value: "modal", label: "Modal" },
+    { value: "moleskin", label: "Moleskin" },
+    { value: "muslin", label: "Muslin" },
+    { value: "neoprene", label: "Neoprene" },
+    { value: "nylon", label: "Nylon" },
+    { value: "oilcloth", label: "Oilcloth" },
+    { value: "organdy", label: "Organdy" },
+    { value: "organza", label: "Organza" },
+    { value: "polyester", label: "Polyester" },
+    { value: "poplin", label: "Poplin" },
+    { value: "rayon", label: "Rayon" },
+    { value: "sateen", label: "Sateen" },
+    { value: "satin", label: "Satin" },
+    { value: "scrim", label: "Scrim" },
+    { value: "seersucker", label: "Seersucker" },
+    { value: "sheer", label: "Sheer" },
+    { value: "silk", label: "Silk" },
+    { value: "slub", label: "Slub" },
+    { value: "spandex", label: "Spandex" },
+    { value: "stretch", label: "Stretch" },
+    { value: "suede", label: "Suede" },
+    { value: "taffeta", label: "Taffeta" },
+    { value: "tencel", label: "Tencel" },
+    { value: "terrycloth", label: "Terrycloth" },
+    { value: "thick", label: "Thick" },
+    { value: "ticking", label: "Ticking" },
+    { value: "toile", label: "Toile" },
+    { value: "tulle", label: "Tulle" },
+    { value: "tweed", label: "Tweed" },
+    { value: "twill", label: "Twill" },
+    { value: "velvet", label: "Velvet" },
+    { value: "velveteen", label: "Velveteen" },
+    { value: "velour", label: "Velour" },
+    { value: "viscose", label: "Viscose" },
+    { value: "voile", label: "Voile" },
+    { value: "wool", label: "Wool" }
+  ];
 
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -321,6 +409,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [pickColorMode, setPickColorMode] = useState<boolean>(false);
   const [pickThreshold, setPickThreshold] = useState<number>(12);
   const [showColorPanel, setShowColorPanel] = useState(false);
+  const [showFabricDropdown, setShowFabricDropdown] = useState(false);
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
@@ -1801,95 +1890,48 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       </div>
                     </label>
                   </div>
-                  <div className="mt-3">
+                  <div className="mt-3 relative">
                     <label className="text-[10px] font-black uppercase text-slate-700">Cloth Type</label>
-                    <select id="cloth-type" value={selectedClothType} onChange={e => setSelectedClothType(e.target.value)} className="w-full mt-1 p-2 border rounded text-sm">
-                      <option value="solid">Solid</option>
-                      <option value="acetate">Acetate</option>
-                      <option value="bamboo">Bamboo Fabric</option>
-                      <option value="batik">Batik</option>
-                      <option value="boucle">Boucle</option>
-                      <option value="broadcloth">Broadcloth</option>
-                      <option value="brocade">Brocade</option>
-                      <option value="buckram">Buckram</option>
-                      <option value="calico">Calico</option>
-                      <option value="cambric">Cambric</option>
-                      <option value="canvas">Canvas</option>
-                      <option value="cashmere">Cashmere</option>
-                      <option value="challis">Challis</option>
-                      <option value="cheesecloth">Cheesecloth</option>
-                      <option value="chenille">Chenille</option>
-                      <option value="chiffon">Chiffon</option>
-                      <option value="chintz">Chintz</option>
-                      <option value="coir">Coir</option>
-                      <option value="corduroy">Corduroy</option>
-                      <option value="cotton">Cotton</option>
-                      <option value="crepe">Crepe</option>
-                      <option value="crepe de chine">Crepe de Chine</option>
-                      <option value="damask">Damask</option>
-                      <option value="denim">Denim</option>
-                      <option value="dobby">Dobby</option>
-                      <option value="duck">Duck</option>
-                      <option value="elastane">Elastane</option>
-                      <option value="faux fur">Faux Fur</option>
-                      <option value="felt">Felt</option>
-                      <option value="flannel">Flannel</option>
-                      <option value="flannelette">Flannelette</option>
-                      <option value="fleece">Fleece</option>
-                      <option value="gabardine">Gabardine</option>
-                      <option value="georgette">Georgette</option>
-                      <option value="gingham">Gingham</option>
-                      <option value="goretex">Goretex</option>
-                      <option value="grosgrain">Grosgrain</option>
-                      <option value="hemp">Hemp</option>
-                      <option value="hessian">Hessian</option>
-                      <option value="jacquard">Jacquard</option>
-                      <option value="jersey knit">Jersey Knit</option>
-                      <option value="jute">Jute</option>
-                      <option value="lace">Lace</option>
-                      <option value="lame">Lame</option>
-                      <option value="leather">Leather</option>
-                      <option value="linen">Linen</option>
-                      <option value="lyocell">Lyocell</option>
-                      <option value="lycra">Lycra</option>
-                      <option value="microfiber">Microfiber</option>
-                      <option value="modal">Modal</option>
-                      <option value="moleskin">Moleskin</option>
-                      <option value="muslin">Muslin</option>
-                      <option value="neoprene">Neoprene</option>
-                      <option value="nylon">Nylon</option>
-                      <option value="oilcloth">Oilcloth</option>
-                      <option value="organdy">Organdy</option>
-                      <option value="organza">Organza</option>
-                      <option value="polyester">Polyester</option>
-                      <option value="poplin">Poplin</option>
-                      <option value="rayon">Rayon</option>
-                      <option value="sateen">Sateen</option>
-                      <option value="satin">Satin</option>
-                      <option value="scrim">Scrim</option>
-                      <option value="seersucker">Seersucker</option>
-                      <option value="sheer">Sheer</option>
-                      <option value="silk">Silk</option>
-                      <option value="slub">Slub</option>
-                      <option value="spandex">Spandex</option>
-                      <option value="stretch">Stretch</option>
-                      <option value="suede">Suede</option>
-                      <option value="taffeta">Taffeta</option>
-                      <option value="tencel">Tencel</option>
-                      <option value="terrycloth">Terrycloth</option>
-                      <option value="thick">Thick</option>
-                      <option value="ticking">Ticking</option>
-                      <option value="toile">Toile</option>
-                      <option value="tulle">Tulle</option>
-                      <option value="tweed">Tweed</option>
-                      <option value="twill">Twill</option>
-                      <option value="velvet">Velvet</option>
-                      <option value="velveteen">Velveteen</option>
-                      <option value="velour">Velour</option>
-                      <option value="viscose">Viscose</option>
-                      <option value="voile">Voile</option>
-                      <option value="wool">Wool</option>
-                    </select>
+                    <div 
+                      className="w-full mt-1 p-2 border rounded text-sm cursor-pointer flex items-center justify-between bg-white"
+                      onClick={() => setShowFabricDropdown(!showFabricDropdown)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {selectedClothType !== 'solid' && getFabricImagePath(selectedClothType) ? (
+                          <img src={getFabricImagePath(selectedClothType)!} alt={selectedClothType} className="w-6 h-6 rounded object-cover" />
+                        ) : selectedClothType !== 'solid' ? (
+                          <div className="w-6 h-6 rounded" style={{ backgroundImage: `url(${generateTextureDataUrl(activeColor, normalizeFabric(selectedClothType), 64)})` }} />
+                        ) : (
+                          <div className="w-6 h-6 rounded" style={{ backgroundColor: activeColor }} />
+                        )}
+                        <span>{fabricOptions.find(o => o.value === selectedClothType)?.label || 'Solid'}</span>
+                      </div>
+                      <span className="text-xs">▼</span>
+                    </div>
+                    
+                    {showFabricDropdown && (
+                      <div className="absolute z-50 w-full mt-1 bg-white border rounded shadow-xl max-h-60 overflow-y-auto">
+                        {fabricOptions.map(option => (
+                          <div 
+                            key={option.value}
+                            className={`p-2 flex items-center gap-2 cursor-pointer hover:bg-slate-100 ${selectedClothType === option.value ? 'bg-slate-50' : ''}`}
+                            onClick={() => {
+                              setSelectedClothType(option.value);
+                              setShowFabricDropdown(false);
+                            }}
+                          >
+                            {option.value !== 'solid' && getFabricImagePath(option.value) ? (
+                              <img src={getFabricImagePath(option.value)!} alt={option.label} className="w-6 h-6 rounded object-cover" />
+                            ) : option.value !== 'solid' ? (
+                              <div className="w-6 h-6 rounded" style={{ backgroundImage: `url(${generateTextureDataUrl(activeColor, normalizeFabric(option.value), 64)})` }} />
+                            ) : (
+                              <div className="w-6 h-6 rounded" style={{ backgroundColor: activeColor }} />
+                            )}
+                            <span className="text-sm">{option.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     <div className="text-[10px] text-slate-400 mt-1">Choose a fabric look to preview when filling shapes.</div>
                     {/* Fabric previews removed — keep fabric type as dropdown only */}
                     <label className="text-[10px] font-black uppercase text-slate-700">Remove color from image</label>
