@@ -1271,6 +1271,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
   }, [workspaceShapes, pickThreshold, saveForUndo]);
 
   const handleDownload = (type: 'png' | 'jpg' = 'png') => {
+    // If the source/sidebar is open on small screens it can overlap the workspace
+    // and cause the browser to save the source image instead. Close it first
+    // so the workspace SVG is rendered when we serialize it.
+    if (isSidebarOpen) {
+      setIsSidebarOpen(false);
+      // wait for the sidebar close animation/paint
+      setTimeout(() => {
+        if (selectedShapeId) downloadShapeImage(selectedShapeId, type);
+        else downloadImage(type);
+      }, 220);
+      return;
+    }
     if (selectedShapeId) downloadShapeImage(selectedShapeId, type); else downloadImage(type);
   };
 
