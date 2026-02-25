@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">
+  <rect width="100%" height="100%" rx="12" ry="12" fill="#2f63c8" />
+  <g fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="2">
+    <!-- simulate chunky stitch curves -->
+    <path d="M14 40 q18 -24 36 0 q18 -24 36 0 q18 -24 36 0 q18 -24 36 0" transform="translate(0,0)"/>
+    <path d="M14 80 q18 -24 36 0 q18 -24 36 0 q18 -24 36 0" transform="translate(0,8)"/>
+    <path d="M14 120 q18 -24 36 0 q18 -24 36 0" transform="translate(0,16)"/>
+  </g>
+</svg>

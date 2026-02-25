@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160" viewBox="0 0 240 160">
+  <defs>
+    <linearGradient id="ityG" x1="0" x2="1">
+      <stop offset="0" stop-color="#67a9ff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#0c3b88" stop-opacity="0.06"/>
+    </linearGradient>
+  </defs>
+  <rect width="100%" height="100%" rx="12" ry="12" fill="#2f6fd1" />
+  <rect width="100%" height="100%" rx="12" ry="12" fill="url(#ityG)"/>
+  <g opacity="0.04">
+    <rect x="0" y="30" width="240" height="2" fill="#ffffff"/>
+    <rect x="0" y="74" width="240" height="2" fill="#000000"/>
+  </g>
+</svg>

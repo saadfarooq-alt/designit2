@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="640" viewBox="0 0 720 640">
+  <rect width="100%" height="100%" fill="#fff"/>
+  <!-- 3 columns x 4 rows grid of 240x160 swatches -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="14" fill="#222">
+    <text x="12" y="18" font-weight="700">Knit fabric swatches (blue)</text>
+  </g>
+  <image href="swatches/jersey.svg" x="0" y="40" width="240" height="160" />
+  <text x="6" y="220" font-size="12" fill="#222">Jersey</text>
+
+  <image href="swatches/double_jersey.svg" x="240" y="40" width="240" height="160" />
+  <text x="246" y="220" font-size="12" fill="#222">Double Jersey</text>
+
+  <image href="swatches/interlock.svg" x="480" y="40" width="240" height="160" />
+  <text x="486" y="220" font-size="12" fill="#222">Interlock</text>
+
+  <image href="swatches/french_terry.svg" x="0" y="240" width="240" height="160" />
+  <text x="6" y="420" font-size="12" fill="#222">French Terry</text>
+
+  <image href="swatches/sweater_knit.svg" x="240" y="240" width="240" height="160" />
+  <text x="246" y="420" font-size="12" fill="#222">Sweater Knit</text>
+
+  <image href="swatches/ponte.svg" x="480" y="240" width="240" height="160" />
+  <text x="486" y="420" font-size="12" fill="#222">Ponte</text>
+
+  <image href="swatches/scuba.svg" x="0" y="440" width="240" height="160" />
+  <text x="6" y="620" font-size="12" fill="#222">Scuba</text>
+
+  <image href="swatches/rib_knit.svg" x="240" y="440" width="240" height="160" />
+  <text x="246" y="620" font-size="12" fill="#222">Rib Knit</text>
+
+  <image href="swatches/lycra_spandex.svg" x="480" y="440" width="240" height="160" />
+  <text x="486" y="620" font-size="12" fill="#222">Lycra / Spandex</text>
+
+  <!-- Note: mesh and ITY are not in the 3x4 grid but available separately -->
+</svg>

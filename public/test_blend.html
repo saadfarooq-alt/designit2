@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<body>
+  <h2>Original Image</h2>
+  <img src="designit2/public/swatches/acetate.jpg" width="200" />
+  
+  <h2>SVG Blend (Red)</h2>
+  <svg width="200" height="200">
+    <defs>
+      <filter id="colorize">
+        <!-- Convert to grayscale -->
+        <feColorMatrix type="matrix" values="
+          0.33 0.33 0.33 0 0
+          0.33 0.33 0.33 0 0
+          0.33 0.33 0.33 0 0
+          0    0    0    1 0" result="gray" />
+        <!-- Create a solid color layer -->
+        <feFlood flood-color="red" result="color" />
+        <!-- Blend them -->
+        <feBlend mode="multiply" in="color" in2="gray" />
+      </filter>
+    </defs>
+    <image href="designit2/public/swatches/acetate.jpg" width="200" height="200" filter="url(#colorize)" preserveAspectRatio="none" />
+  </svg>
+</body>
+</html>

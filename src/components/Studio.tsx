@@ -16,6 +16,7 @@ interface DistortableShape {
   scale: number;
   showDots: boolean;
   fillColor?: string;
+  clothType?: string;
   baseFill?: string;
   fillOpacity?: number;
   erasedPaths: string[];
@@ -29,6 +30,7 @@ interface Stroke {
   color: string; 
   width: number; 
   fillColor?: string;
+  clothType?: string;
   baseFill?: string;
   fillOpacity?: number;
   groupId?: string;
@@ -58,6 +60,220 @@ export function Studio({ onBack }: { onBack: () => void }) {
     const b = bigint & 255;
     return `rgba(${r},${g},${b},${alpha})`;
   };
+  // Generate a texture data URL for cloth types (higher variety + distinct styles)
+  const generateTextureDataUrl = (color: string, type: string, size = 128) => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = size; c.height = size;
+      const ctx = c.getContext('2d');
+      if (!ctx) return '';
+      // base
+      ctx.fillStyle = color;
+      ctx.fillRect(0,0,size,size);
+
+      // helper: apply subtle noise
+      const applyNoise = (amount = 0.03, dots = 1000) => {
+        for (let i=0;i<dots;i++) { ctx.fillStyle = `rgba(255,255,255,${Math.random()*amount})`; ctx.fillRect(Math.random()*size, Math.random()*size, 1, 1); }
+      };
+
+      if (type === 'cotton') {
+        // fine matte grain
+        applyNoise(0.035, 1200);
+      } else if (type === 'linen') {
+        // visible cross-thread weave with slight irregularity
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = Math.max(1, size/64);
+        for (let i = 0; i < size; i += Math.max(8, Math.round(size/12))) { ctx.beginPath(); const xJitter = (Math.random()-0.5)*2; ctx.moveTo(i + xJitter,0); ctx.lineTo(i + xJitter,size); ctx.stroke(); }
+        for (let j = 0; j < size; j += Math.max(8, Math.round(size/12))) { ctx.beginPath(); const yJitter = (Math.random()-0.5)*2; ctx.moveTo(0,j + yJitter); ctx.lineTo(size,j + yJitter); ctx.stroke(); }
+        applyNoise(0.02, 500);
+      } else if (type === 'denim') {
+        // diagonal twill with brighter weft lines
+        const twill = Math.max(6, Math.round(size/20)); ctx.lineWidth = Math.max(1, size/96);
+        ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+        for (let i = -size; i < size*2; i += twill) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i + size, size); ctx.stroke(); }
+        // subtle shadow overlay for depth
+        ctx.globalAlpha = 0.06; ctx.fillStyle = 'rgba(0,0,0,0.06)'; ctx.fillRect(0,0,size,size); ctx.globalAlpha = 1;
+        applyNoise(0.02, 500);
+      } else if (type === 'silk') {
+        // smooth directional sheen
+        const g = ctx.createLinearGradient(-size*0.2,0,size*0.8,0); g.addColorStop(0,'rgba(255,255,255,0.24)'); g.addColorStop(0.5,'rgba(255,255,255,0.02)'); g.addColorStop(1,'rgba(255,255,255,0.18)');
+        ctx.globalCompositeOperation = 'soft-light'; ctx.fillStyle = g; ctx.fillRect(0,0,size,size); ctx.globalCompositeOperation = 'source-over';
+        // soft curved highlight
+        ctx.globalAlpha = 0.14; ctx.beginPath(); ctx.ellipse(size*0.5, size*0.35, size*0.7, size*0.2, -0.25, 0, Math.PI*2); ctx.fillStyle = 'white'; ctx.fill(); ctx.globalAlpha = 1;
+      } else if (type === 'velvet') {
+        // dense pile with vertical sheen
+        applyNoise(0.02, 500);
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = Math.max(1, size/160);
+        for (let x = 0; x < size; x += 2) { const h = (Math.random()*2-1)*2; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x + h, size); ctx.stroke(); }
+        // vertical subtle streaks
+        ctx.globalAlpha = 0.06; const gradV = ctx.createLinearGradient(0,0,0,size); gradV.addColorStop(0,'white'); gradV.addColorStop(1,'rgba(255,255,255,0)'); ctx.fillStyle = gradV; ctx.fillRect(0,0,size,size); ctx.globalAlpha = 1;
+      } else if (type === 'spun') {
+        // short directional fiber strokes
+        ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = Math.max(1, size/160);
+        for (let i=0;i<3000;i++) { const x = Math.random()*size; const y = Math.random()*size; const len = Math.random()*8 + 2; const ang = (Math.random()-0.5)*Math.PI; ctx.beginPath(); ctx.moveTo(x,y); ctx.lineTo(x + Math.cos(ang)*len, y + Math.sin(ang)*len); ctx.stroke(); }
+        applyNoise(0.01, 300);
+      } else if (type === 'chiffon') {
+        // chiffon: produce an inline SVG data-URL (layered translucent folds)
+        try {
+          const w = size, h = size;
+          const base = color;
+          const svg = `<?xml version="1.0" encoding="utf-8"?>\n<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${h}' viewBox='0 0 ${w} ${h}'>\n  <defs>\n    <linearGradient id='gSoft' x1='0' y1='0' x2='1' y2='0'>\n      <stop offset='0' stop-color='rgba(255,255,255,0.20)'/>\n      <stop offset='0.5' stop-color='rgba(255,255,255,0.03)'/>\n      <stop offset='1' stop-color='rgba(255,255,255,0.14)'/>\n    </linearGradient>\n    <filter id='blurLarge' x='-60%' y='-60%' width='220%' height='220%'><feGaussianBlur stdDeviation='8' result='b'/></filter>\n    <filter id='blurSmall' x='-30%' y='-30%' width='160%' height='160%'><feGaussianBlur stdDeviation='3' result='s'/></filter>\n    <radialGradient id='grain' cx='50%' cy='50%' r='50%'><stop offset='0' stop-color='rgba(255,255,255,0.02)'/><stop offset='1' stop-color='rgba(255,255,255,0)'/></radialGradient>\n  </defs>\n  <rect width='100%' height='100%' fill='${base}'/>\n  <!-- layered translucent folds -->\n  <g opacity='0.9' filter='url(#blurLarge)'>\n    <path d='M0 ${Math.round(h*0.08)} C ${Math.round(w*0.18)} ${Math.round(h*0.02)} ${Math.round(w*0.42)} ${Math.round(h*0.22)} ${Math.round(w*0.6)} ${Math.round(h*0.08)} C ${Math.round(w*0.76)} ${Math.round(h*0.0)} ${Math.round(w*0.9)} ${Math.round(h*0.14)} ${w} ${Math.round(h*0.08)} L ${w} ${h} L 0 ${h} Z' fill='white' opacity='0.07'/>\n    <path d='M0 ${Math.round(h*0.38)} C ${Math.round(w*0.14)} ${Math.round(h*0.26)} ${Math.round(w*0.36)} ${Math.round(h*0.6)} ${Math.round(w*0.62)} ${Math.round(h*0.36)} C ${Math.round(w*0.78)} ${Math.round(h*0.24)} ${Math.round(w*0.9)} ${Math.round(h*0.46)} ${w} ${Math.round(h*0.38)} L ${w} ${h} L 0 ${h} Z' fill='white' opacity='0.06'/>\n    <path d='M0 ${Math.round(h*0.68)} C ${Math.round(w*0.12)} ${Math.round(h*0.54)} ${Math.round(w*0.34)} ${Math.round(h*0.9)} ${Math.round(w*0.58)} ${Math.round(h*0.66)} C ${Math.round(w*0.76)} ${Math.round(h*0.5)} ${Math.round(w*0.9)} ${Math.round(h*0.76)} ${w} ${Math.round(h*0.68)} L ${w} ${h} L 0 ${h} Z' fill='white' opacity='0.05'/>\n  </g>\n  <!-- finer folds and highlights -->\n  <g opacity='0.8' filter='url(#blurSmall)'>\n    <path d='M0 ${Math.round(h*0.18)} C ${Math.round(w*0.22)} ${Math.round(h*0.08)} ${Math.round(w*0.44)} ${Math.round(h*0.28)} ${Math.round(w*0.64)} ${Math.round(h*0.14)} C ${Math.round(w*0.8)} ${Math.round(h*0.06)} ${Math.round(w*0.92)} ${Math.round(h*0.2)} ${w} ${Math.round(h*0.18)} L ${w} ${h} L 0 ${h} Z' fill='white' opacity='0.04'/>\n    <path d='M0 ${Math.round(h*0.5)} C ${Math.round(w*0.16)} ${Math.round(h*0.36)} ${Math.round(w*0.38)} ${Math.round(h*0.66)} ${Math.round(w*0.62)} ${Math.round(h*0.44)} C ${Math.round(w*0.78)} ${Math.round(h*0.32)} ${Math.round(w*0.9)} ${Math.round(h*0.52)} ${w} ${Math.round(h*0.5)} L ${w} ${h} L 0 ${h} Z' fill='white' opacity='0.035'/>\n  </g>\n  <!-- soft sheen overlay -->\n  <rect width='100%' height='100%' fill='url(#gSoft)' opacity='0.06'/>\n  <!-- subtle grain to simulate fibres -->\n  <rect width='100%' height='100%' fill='url(#grain)' opacity='0.02'/>\n</svg>`;
+          return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+        } catch (err) {
+          // fallback to canvas-based subtle noise
+          ctx.globalAlpha = 0.55; ctx.fillStyle = color; ctx.fillRect(0,0,size,size); ctx.globalAlpha = 1;
+          const g2 = ctx.createLinearGradient(0,0,0,size); g2.addColorStop(0, 'rgba(255,255,255,0.16)'); g2.addColorStop(0.5, 'rgba(255,255,255,0.02)'); g2.addColorStop(1, 'rgba(255,255,255,0.08)'); ctx.fillStyle = g2; ctx.fillRect(0,0,size,size);
+          applyNoise(0.008, 250);
+        }
+      } else if (type === 'polyester') {
+        // micro-grid with subtle sheen
+        ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = Math.max(0.6, size/256);
+        const step = Math.max(3, Math.round(size/20));
+        for (let i=0;i<size;i += step) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,size); ctx.stroke(); }
+        for (let j=0;j<size;j += step) { ctx.beginPath(); ctx.moveTo(0,j); ctx.lineTo(size,j); ctx.stroke(); }
+        applyNoise(0.01, 350);
+      }
+
+      return c.toDataURL('image/png');
+    } catch (e) { return ''; }
+  };
+
+  // Map specific fabric names to the texture generator types used above.
+  // This allows selecting a human-friendly fabric name (e.g. "satin") and
+  // reusing an appropriate generator (e.g. `silk`) without duplicating code.
+  const FABRIC_NAME_MAP: Record<string, string> = {
+    // Base types
+    solid: 'solid',
+    cotton: 'cotton',
+    linen: 'linen',
+    denim: 'denim',
+    silk: 'silk',
+    velvet: 'velvet',
+    spun: 'spun',
+    chiffon: 'chiffon',
+    polyester: 'polyester',
+    jersey: 'jersey',
+    'double jersey': 'double_jersey',
+    interlock: 'interlock',
+    'french terry': 'french_terry',
+    'sweater knit': 'sweater',
+    ponte: 'ponte',
+    scuba: 'scuba',
+    'rib knit': 'rib',
+    rib: 'rib',
+    mesh: 'mesh',
+    ity: 'ity',
+    
+    // Mapped from glossary
+    acetate: 'acetate',
+    bamboo: 'bamboo',
+    batik: 'batik',
+    boucle: 'boucle',
+    broadcloth: 'broadcloth',
+    brocade: 'brocade',
+    buckram: 'buckram',
+    calico: 'calico',
+    cambric: 'cambric',
+    canvas: 'canvas',
+    cashmere: 'cashmere',
+    challis: 'challis',
+    cheesecloth: 'cheesecloth',
+    chenille: 'chenille',
+    chintz: 'chintz',
+    coir: 'coir',
+    corduroy: 'corduroy',
+    crepe: 'crepe',
+    'crepe de chine': 'crepe_de_chine',
+    damask: 'damask',
+    dobby: 'dobby',
+    duck: 'duck',
+    elastane: 'elastane',
+    'faux fur': 'faux_fur',
+    felt: 'felt',
+    flannel: 'flannel',
+    flannelette: 'flannelette',
+    fleece: 'fleece',
+    gabardine: 'gabardine',
+    georgette: 'georgette',
+    gingham: 'gingham',
+    goretex: 'goretex',
+    grosgrain: 'grosgrain',
+    hemp: 'hemp',
+    hessian: 'hessian',
+    jacquard: 'jacquard',
+    'jersey knit': 'jersey_knit',
+    jute: 'jute',
+    lace: 'lace',
+    lame: 'lame',
+    leather: 'leather',
+    lyocell: 'lyocell',
+    lycra: 'lycra',
+    microfiber: 'microfiber',
+    modal: 'modal',
+    moleskin: 'moleskin',
+    muslin: 'muslin',
+    neoprene: 'neoprene',
+    nylon: 'nylon',
+    oilcloth: 'oilcloth',
+    organdy: 'organdy',
+    organza: 'organza',
+    poplin: 'poplin',
+    rayon: 'rayon',
+    sateen: 'sateen',
+    satin: 'satin',
+    scrim: 'scrim',
+    seersucker: 'seersucker',
+    sheer: 'sheer',
+    slub: 'slub',
+    spandex: 'spandex',
+    stretch: 'stretch',
+    suede: 'suede',
+    taffeta: 'taffeta',
+    tencel: 'tencel',
+    terrycloth: 'terrycloth',
+    thick: 'thick',
+    ticking: 'ticking',
+    toile: 'toile',
+    tulle: 'tulle',
+    tweed: 'tweed',
+    twill: 'twill',
+    velveteen: 'velveteen',
+    velour: 'velour',
+    viscose: 'viscose',
+    voile: 'voile',
+    wool: 'wool',
+
+    'default': 'solid'
+  };
+
+  const normalizeFabric = (name?: string) => {
+    if (!name) return 'solid';
+    const key = name.trim().toLowerCase();
+    return FABRIC_NAME_MAP[key] || FABRIC_NAME_MAP[key.replace(/s$/,'')] || FABRIC_NAME_MAP['default'];
+  };
+
+  // Helper to get the correct image path for a fabric
+  const getFabricImagePath = (fabricName: string) => {
+    const normalized = normalizeFabric(fabricName);
+    
+    // Check if we have a specific JPG for this fabric
+    const jpgFabrics = [
+      'acetate', 'batik', 'boucle', 'brocade', 'buckram', 'calico', 'cambric', 'canvas', 'cashmere',
+      'cheesecloth', 'chenille', 'chiffon', 'chintz', 'coir', 'corduroy', 'cotton', 'crepe', 'crepe_de_chine',
+      'denim', 'dobby', 'elastane', 'faux_fur', 'felt', 'flannel', 'flannelette', 'fleece', 'french_terry',
+      'gabardine', 'georgette', 'gingham', 'goretex', 'grosgrain', 'hemp', 'hessian', 'jacquard',
+      'jersey_knit', 'jute', 'lace', 'lame', 'leather', 'linen', 'lycra', 'lyocell', 'microfiber',
+      'moleskin', 'muslin', 'neoprene', 'organza', 'rib_knit', 'spandex', 'suede', 'taffeta',
+      'terrycloth', 'ticking', 'toile', 'tulle', 'velvet', 'wool'
+    ];
+    
+    if (jpgFabrics.includes(normalized)) {
+      return `/swatches/${normalized}.jpg`;
+    }
+    
+    // Fallback to generated texture
+    return null;
+  };
+
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -99,6 +315,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [activeColor, setActiveColor] = useState("#27EEF5");
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [keepOriginalColor, setKeepOriginalColor] = useState<boolean>(false);
+  const [selectedClothType, setSelectedClothType] = useState<string>('solid');
   const [pickColorMode, setPickColorMode] = useState<boolean>(false);
   const [pickThreshold, setPickThreshold] = useState<number>(12);
   const [showColorPanel, setShowColorPanel] = useState(false);
@@ -534,7 +751,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
       }
         else if (step.action === "fill_shape") {
         saveForUndo();
-        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : s));
+        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
       }
       else if (step.action === "erase_action") {
         saveForUndo();
@@ -947,7 +1164,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
       const dataUrl = canvas.toDataURL(mime);
       const a = document.createElement('a');
       a.href = dataUrl;
-      a.download = `selection-extract.${asJpeg ? 'jpg' : 'png'}`;
+      a.download = `selection-extract-${Date.now()}.${asJpeg ? 'jpg' : 'png'}`;
       a.click();
     } catch (err) {
       console.error('extractSelection failed', err);
@@ -1124,6 +1341,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
       const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
       if (!href) continue;
       try {
+        // If the image is already a data URL, no need to fetch or convert
+        if (href.startsWith('data:')) {
+          console.log('[downloadImage] image already data URL; skipping fetch');
+          inlined++;
+          continue;
+        }
+        // Fetch remote/blob URLs and convert to data URL for inlining
         const res = await fetch(href, { mode: 'cors' });
         const blob = await res.blob();
         const reader = new FileReader();
@@ -1140,6 +1364,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
     }
     console.log('[downloadImage] inlined images', inlined);
 
+    // Ensure SVG namespaces are present so hrefs/xlink are serialized correctly
+    try { clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink'); } catch (e) {}
     const serializer = new XMLSerializer();
     let source = serializer.serializeToString(clone);
     if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
@@ -1163,7 +1389,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
       const dataUrl = canvas.toDataURL(mime);
       console.log('[downloadImage] created dataUrl', dataUrl.substring(0, 40));
       const link = document.createElement('a');
-      link.download = `design.${type}`;
+      link.download = `design-${Date.now()}.${type}`;
       link.href = dataUrl;
       link.click();
     };
@@ -1173,34 +1399,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
       alert('Failed to render SVG for export. Check console for details.');
     };
     img.src = url;
-  };
-
-  // Export a single shape's image (respects shape.scale for displayed size)
-  const downloadShapeImage = async (shapeId: string, type: 'png' | 'jpg' = 'png') => {
-    const shape = workspaceShapes.find(s => s.id === shapeId);
-    if (!shape) { alert('Shape not found'); return; }
-    try {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = shape.img; });
-      const w = Math.max(1, Math.round(shape.dims.width * (shape.scale || 1)));
-      const h = Math.max(1, Math.round(shape.dims.height * (shape.scale || 1)));
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) { alert('Canvas unavailable'); return; }
-      if (type === 'jpg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,w,h); }
-      ctx.drawImage(img, 0, 0, w, h);
-      const mime = type === 'jpg' ? 'image/jpeg' : 'image/png';
-      const dataUrl = canvas.toDataURL(mime);
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `${shape.id}.${type}`;
-      a.click();
-    } catch (err) {
-      console.error('downloadShapeImage failed', err);
-      alert('Failed to download shape image — try uploading the image (CORS)');
-    }
   };
 
   const hexToRgb = (hex: string) => {
@@ -1278,12 +1476,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
       setIsSidebarOpen(false);
       // wait for the sidebar close animation/paint
       setTimeout(() => {
-        if (selectedShapeId) downloadShapeImage(selectedShapeId, type);
-        else downloadImage(type);
+        downloadImage(type);
       }, 220);
       return;
     }
-    if (selectedShapeId) downloadShapeImage(selectedShapeId, type); else downloadImage(type);
+    downloadImage(type);
   };
 
   function pasteFromClipboard() {
@@ -1456,7 +1653,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             <div className="relative mt-2">
               <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
               {showColorPanel && (
-                <div className="absolute left-10 bottom-full mb-2 p-3 bg-white rounded shadow-xl z-50 w-40">
+                <div className="absolute left-12 top-1/2 -translate-y-1/2 p-3 bg-white rounded shadow-xl z-50 w-48">
                   <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-full h-10 p-0" />
                   <div className="flex items-center gap-2 mt-2">
                     <label className="text-[10px] font-black uppercase text-slate-600">Fill</label>
@@ -1476,6 +1673,96 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     </label>
                   </div>
                   <div className="mt-3">
+                    <label className="text-[10px] font-black uppercase text-slate-700">Cloth Type</label>
+                    <select id="cloth-type" value={selectedClothType} onChange={e => setSelectedClothType(e.target.value)} className="w-full mt-1 p-2 border rounded text-sm">
+                      <option value="solid">Solid</option>
+                      <option value="acetate">Acetate</option>
+                      <option value="bamboo">Bamboo Fabric</option>
+                      <option value="batik">Batik</option>
+                      <option value="boucle">Boucle</option>
+                      <option value="broadcloth">Broadcloth</option>
+                      <option value="brocade">Brocade</option>
+                      <option value="buckram">Buckram</option>
+                      <option value="calico">Calico</option>
+                      <option value="cambric">Cambric</option>
+                      <option value="canvas">Canvas</option>
+                      <option value="cashmere">Cashmere</option>
+                      <option value="challis">Challis</option>
+                      <option value="cheesecloth">Cheesecloth</option>
+                      <option value="chenille">Chenille</option>
+                      <option value="chiffon">Chiffon</option>
+                      <option value="chintz">Chintz</option>
+                      <option value="coir">Coir</option>
+                      <option value="corduroy">Corduroy</option>
+                      <option value="cotton">Cotton</option>
+                      <option value="crepe">Crepe</option>
+                      <option value="crepe de chine">Crepe de Chine</option>
+                      <option value="damask">Damask</option>
+                      <option value="denim">Denim</option>
+                      <option value="dobby">Dobby</option>
+                      <option value="duck">Duck</option>
+                      <option value="elastane">Elastane</option>
+                      <option value="faux fur">Faux Fur</option>
+                      <option value="felt">Felt</option>
+                      <option value="flannel">Flannel</option>
+                      <option value="flannelette">Flannelette</option>
+                      <option value="fleece">Fleece</option>
+                      <option value="gabardine">Gabardine</option>
+                      <option value="georgette">Georgette</option>
+                      <option value="gingham">Gingham</option>
+                      <option value="goretex">Goretex</option>
+                      <option value="grosgrain">Grosgrain</option>
+                      <option value="hemp">Hemp</option>
+                      <option value="hessian">Hessian</option>
+                      <option value="jacquard">Jacquard</option>
+                      <option value="jersey knit">Jersey Knit</option>
+                      <option value="jute">Jute</option>
+                      <option value="lace">Lace</option>
+                      <option value="lame">Lame</option>
+                      <option value="leather">Leather</option>
+                      <option value="linen">Linen</option>
+                      <option value="lyocell">Lyocell</option>
+                      <option value="lycra">Lycra</option>
+                      <option value="microfiber">Microfiber</option>
+                      <option value="modal">Modal</option>
+                      <option value="moleskin">Moleskin</option>
+                      <option value="muslin">Muslin</option>
+                      <option value="neoprene">Neoprene</option>
+                      <option value="nylon">Nylon</option>
+                      <option value="oilcloth">Oilcloth</option>
+                      <option value="organdy">Organdy</option>
+                      <option value="organza">Organza</option>
+                      <option value="polyester">Polyester</option>
+                      <option value="poplin">Poplin</option>
+                      <option value="rayon">Rayon</option>
+                      <option value="sateen">Sateen</option>
+                      <option value="satin">Satin</option>
+                      <option value="scrim">Scrim</option>
+                      <option value="seersucker">Seersucker</option>
+                      <option value="sheer">Sheer</option>
+                      <option value="silk">Silk</option>
+                      <option value="slub">Slub</option>
+                      <option value="spandex">Spandex</option>
+                      <option value="stretch">Stretch</option>
+                      <option value="suede">Suede</option>
+                      <option value="taffeta">Taffeta</option>
+                      <option value="tencel">Tencel</option>
+                      <option value="terrycloth">Terrycloth</option>
+                      <option value="thick">Thick</option>
+                      <option value="ticking">Ticking</option>
+                      <option value="toile">Toile</option>
+                      <option value="tulle">Tulle</option>
+                      <option value="tweed">Tweed</option>
+                      <option value="twill">Twill</option>
+                      <option value="velvet">Velvet</option>
+                      <option value="velveteen">Velveteen</option>
+                      <option value="velour">Velour</option>
+                      <option value="viscose">Viscose</option>
+                      <option value="voile">Voile</option>
+                      <option value="wool">Wool</option>
+                    </select>
+                    <div className="text-[10px] text-slate-400 mt-1">Choose a fabric look to preview when filling shapes.</div>
+                    {/* Fabric previews removed — keep fabric type as dropdown only */}
                     <label className="text-[10px] font-black uppercase text-slate-700">Remove color from image</label>
                     <div className="flex items-center gap-2 mt-2">
                       <input id="pick-threshold" type="range" min={0} max={100} value={pickThreshold} onChange={e => setPickThreshold(parseInt(e.target.value, 10))} className="flex-1" />
@@ -1587,9 +1874,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 }
                 setDragOffset({ x: c.rx, y: c.ry }); 
               } }} onPointerUp={(e) => { 
-              // Show context menu for selection rectangle
+              // Show context menu for selection rectangle only on right-click
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
-                setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+                if (((e.nativeEvent) as PointerEvent).button === 2) {
+                  setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
+                }
               } else {
                 setSelectionRect(null);
               }
@@ -1648,11 +1937,37 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           </defs>
                           <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
                             if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
-                            if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : s)); return; }
+                            if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s)); return; }
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                           }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                           {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
-                          {shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />}
+                          {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ? (
+                            <>
+                              <defs>
+                                {getFabricImagePath(shape.clothType) ? (
+                                  <filter id={`colorize-${shape.id}`}>
+                                    <feColorMatrix type="matrix" values="
+                                      0.33 0.33 0.33 0 0
+                                      0.33 0.33 0.33 0 0
+                                      0.33 0.33 0.33 0 0
+                                      0    0    0    1 0" result="gray" />
+                                    <feFlood floodColor={shape.fillColor} result="color" />
+                                    <feBlend mode="multiply" in="color" in2="gray" />
+                                  </filter>
+                                ) : null}
+                                <pattern id={`pt-${shape.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(shape.clothType) ? 150 : 40} height={getFabricImagePath(shape.clothType) ? 150 : 40}>
+                                  {getFabricImagePath(shape.clothType) ? (
+                                    <image href={getFabricImagePath(shape.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-${shape.id})`} />
+                                  ) : (
+                                    <image href={generateTextureDataUrl(shape.fillColor, normalizeFabric(shape.clothType), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
+                                  )}
+                                </pattern>
+                              </defs>
+                              <path d={generatePathData(shape.dots, true)} fill={`url(#pt-${shape.id})`} pointerEvents="none" />
+                            </>
+                          ) : (
+                            shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
+                          )}
                           {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
                           {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                           {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
@@ -1664,7 +1979,33 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 {strokes.map(s => (
                   <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                     {s.baseFill && <path d={generatePathData(s.points, false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
-                    <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : st)); } }} />
+                    {s.fillColor && s.clothType && s.clothType !== 'solid' ? (
+                      <>
+                        <defs>
+                          {getFabricImagePath(s.clothType) ? (
+                            <filter id={`colorize-stroke-${s.id}`}>
+                              <feColorMatrix type="matrix" values="
+                                0.33 0.33 0.33 0 0
+                                0.33 0.33 0.33 0 0
+                                0.33 0.33 0.33 0 0
+                                0    0    0    1 0" result="gray" />
+                              <feFlood floodColor={s.fillColor} result="color" />
+                              <feBlend mode="multiply" in="color" in2="gray" />
+                            </filter>
+                          ) : null}
+                          <pattern id={`pt-stroke-${s.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(s.clothType) ? 150 : 40} height={getFabricImagePath(s.clothType) ? 150 : 40}>
+                            {getFabricImagePath(s.clothType) ? (
+                              <image href={getFabricImagePath(s.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-stroke-${s.id})`} />
+                            ) : (
+                              <image href={generateTextureDataUrl(s.fillColor, normalizeFabric(s.clothType || 'cotton'), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
+                            )}
+                          </pattern>
+                        </defs>
+                            <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } }} />
+                      </>
+                    ) : (
+                      <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } }} />
+                    )}
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
                     ))}
