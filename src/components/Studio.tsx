@@ -106,7 +106,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
-  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string; type: "shape" | "stroke" | "selection" } | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; id: string; type: "shape" | "stroke" | "selection"; clickX?: number; clickY?: number } | null>(null);
   const [draggingDot, setDraggingDot] = useState<{ shapeId: string; dotId: string } | null>(null);
   const [draggingStrokeDot, setDraggingStrokeDot] = useState<{ strokeId: string; dotId: string } | null>(null);
   const [draggingShapeId, setDraggingShapeId] = useState<string | null>(null);
@@ -870,6 +870,93 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setContextMenu(null);
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
+  const extractSelection = useCallback(async (asJpeg = false) => {
+    if (!selectionRect) return;
+    try {
+      const rectX = Math.min(selectionRect.x1, selectionRect.x2);
+      const rectY = Math.min(selectionRect.y1, selectionRect.y2);
+      const rectW = Math.abs(selectionRect.x2 - selectionRect.x1);
+      const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
+      if (rectW < 5 || rectH < 5) return;
+
+      const canvas = document.createElement('canvas');
+      const scale = 1;
+      canvas.width = Math.round(rectW * scale);
+      canvas.height = Math.round(rectH * scale);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.scale(scale, scale);
+
+      // Draw shapes inside selection
+      const shapesToDraw = workspaceShapes.filter(shape => {
+        const bbox = getBoundingBox(shape);
+        return isItemInRect(bbox, selectionRect);
+      });
+
+      const imagePromises = shapesToDraw.map(shape => {
+        return new Promise<{ shape: DistortableShape; img: HTMLImageElement } | null>((resolve) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => resolve({ shape, img });
+          img.onerror = () => resolve(null);
+          img.src = shape.img;
+        });
+      });
+
+      const loadedImages = await Promise.all(imagePromises);
+
+      loadedImages.forEach(item => {
+        if (!item) return;
+        const { shape, img } = item;
+        ctx.save();
+        ctx.translate(shape.position.x - rectX, shape.position.y - rectY);
+        ctx.scale(shape.scale, shape.scale);
+
+        // Clip to polygon
+        ctx.beginPath();
+        shape.dots.forEach((dot, i) => {
+          if (i === 0) ctx.moveTo(dot.x, dot.y);
+          else ctx.lineTo(dot.x, dot.y);
+        });
+        ctx.closePath();
+        ctx.clip();
+
+        ctx.drawImage(img, 0, 0, shape.dims.width, shape.dims.height);
+        ctx.restore();
+      });
+
+      // Draw strokes inside selection
+      strokes.forEach(stroke => {
+        const bbox = getBoundingBox(stroke);
+        if (isItemInRect(bbox, selectionRect)) {
+          ctx.save();
+          ctx.translate(-rectX, -rectY);
+          ctx.strokeStyle = stroke.color;
+          ctx.lineWidth = stroke.width;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          stroke.points.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+          ctx.stroke();
+          if (stroke.fillColor) { ctx.fillStyle = stroke.fillColor; ctx.fill(); }
+          ctx.restore();
+        }
+      });
+
+      const mime = asJpeg ? 'image/jpeg' : 'image/png';
+      const dataUrl = canvas.toDataURL(mime);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `selection-extract.${asJpeg ? 'jpg' : 'png'}`;
+      a.click();
+    } catch (err) {
+      console.error('extractSelection failed', err);
+      alert('Extraction failed. Try uploading images (CORS) or check console.');
+    }
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
+
   const pasteFromSelection = useCallback(() => {
     if (!clipboard || (!clipboard.shapes.length && !clipboard.strokes.length)) return;
     saveForUndo();
@@ -1116,6 +1203,73 @@ export function Studio({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const hexToRgb = (hex: string) => {
+    if (!hex) return null;
+    let h = hex.replace('#', '');
+    if (h.length === 3) h = h.split('').map(c => c + c).join('');
+    if (h.length !== 6) return null;
+    const bigint = parseInt(h, 16);
+    return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+  };
+
+  // Replace sampled color in a shape's image with a new color (within pickThreshold)
+  const replaceColorInShape = useCallback(async (shapeId: string, pickX?: number, pickY?: number) => {
+    const shape = workspaceShapes.find(s => s.id === shapeId);
+    if (!shape) { alert('Shape not found'); return; }
+    try {
+      saveForUndo();
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = shape.img; });
+
+      const canvas = document.createElement('canvas');
+      const w = shape.dims.width;
+      const h = shape.dims.height;
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context unavailable');
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // Determine pick coordinates in image space
+      let imgX = Math.round(( (pickX ?? (shape.position.x + (w*shape.scale)/2) ) - shape.position.x ) / shape.scale);
+      let imgY = Math.round(( (pickY ?? (shape.position.y + (h*shape.scale)/2) ) - shape.position.y ) / shape.scale);
+      imgX = Math.max(0, Math.min(w - 1, imgX));
+      imgY = Math.max(0, Math.min(h - 1, imgY));
+
+      const pickData = ctx.getImageData(imgX, imgY, 1, 1).data;
+      const tr = pickData[0], tg = pickData[1], tb = pickData[2];
+
+      // Ask user for replacement color (simple prompt for now)
+      const targetHex = prompt('Enter replacement hex color (e.g. #FF00AA)');
+      if (!targetHex) return;
+      const rgb = hexToRgb(targetHex.trim());
+      if (!rgb) { alert('Invalid color'); return; }
+
+      const imageData = ctx.getImageData(0,0,w,h);
+      const data = imageData.data;
+      const maxDist = Math.sqrt(255*255*3);
+      const thresh = (pickThreshold / 100) * maxDist;
+      const threshSq = thresh * thresh;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i+1], b = data[i+2];
+        const dr = r - tr, dg = g - tg, db = b - tb;
+        const distSq = dr*dr + dg*dg + db*db;
+        if (distSq <= threshSq) {
+          data[i] = rgb.r; data[i+1] = rgb.g; data[i+2] = rgb.b;
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      const newUrl = canvas.toDataURL('image/png');
+      setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, img: newUrl } : s));
+    } catch (err) {
+      console.error('replaceColorInShape failed', err);
+      alert('Could not replace color. This is often a CORS issue — upload the image locally and try again.');
+    }
+  }, [workspaceShapes, pickThreshold, saveForUndo]);
+
   const handleDownload = (type: 'png' | 'jpg' = 'png') => {
     if (selectedShapeId) downloadShapeImage(selectedShapeId, type); else downloadImage(type);
   };
@@ -1257,6 +1411,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
                     📋 Copy Area
                   </button>
+                  <button onClick={() => extractSelection(false)} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
+                    ✂️ Extract Image
+                  </button>
                   {clipboard && clipboard.shapes.length > 0 && (
                     <button onClick={pasteFromClipboard} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase text-green-600">
                       📌 Paste
@@ -1270,6 +1427,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
                     <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
                       🎀 Drape to Mannequin
+                    </button>
+                  )}
+                  {contextMenu.type === "shape" && (
+                    <button id="pick-replace-btn" onClick={() => { replaceColorInShape(contextMenu.id, contextMenu.clickX, contextMenu.clickY); setContextMenu(null); }} className="w-full text-left px-4 py-2 hover:bg-yellow-50 text-[9px] font-black uppercase border-b border-slate-100 text-yellow-600">
+                      🎨 Pick & Replace Color
                     </button>
                   )}
                   <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else if (contextMenu.type === "stroke") setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">Delete Item</button>
@@ -1448,7 +1610,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 {workspaceShapes.map((shape, shapeIdx) => {
                   const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale})`;
                   return (
-                    <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape" }); }}>
+                    <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
                       {shape.isMannequin ? (
                         <>
                           <defs>
@@ -1489,8 +1651,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 })}
                 {strokes.map(s => (
                   <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
-                    {s.baseFill && <path d={generatePathData(s.points)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
-                    <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : st)); } }} />
+                    {s.baseFill && <path d={generatePathData(s.points, false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
+                    <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : st)); } }} />
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
                     ))}
