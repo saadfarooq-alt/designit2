@@ -34,6 +34,7 @@ interface Stroke {
   baseFill?: string;
   fillOpacity?: number;
   groupId?: string;
+  closed?: boolean;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean; };
@@ -281,6 +282,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [tutorialDisabled, setTutorialDisabled] = useState(false);
   const [ghostCursor, setGhostCursor] = useState({ x: 0, y: 0, active: false, clicking: false });
   const [showMannequinModal, setShowMannequinModal] = useState(false);
+  const [showShapesModal, setShowShapesModal] = useState(false);
   const [showDrapeModal, setShowDrapeModal] = useState(false);
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(null);
   const [armpitMeasurement, setArmpitMeasurement] = useState(20);
@@ -338,7 +340,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
-  const PEN_SPACING = 12; 
+  const PEN_SPACING = 30; 
   const ERASE_RADIUS = 15;
 
   useEffect(() => { setMounted(true); }, []);
@@ -590,6 +592,86 @@ export function Studio({ onBack }: { onBack: () => void }) {
       { id: 'shoulder-left', x: centerX - shoulderWidth/2, y: shoulderY },
     ];
   };
+
+  const addShapeToCanvas = useCallback((type: 'square' | 'circle' | 'triangle' | 'star' | 'heart' | 'line' | 'curve') => {
+    saveForUndo();
+    const cx = 200;
+    const cy = 200;
+    const size = 150;
+    const pts: { id: string; x: number; y: number }[] = [];
+    
+    if (type === 'square') {
+      pts.push({ id: `pt-${Date.now()}-1`, x: cx - size/2, y: cy - size/2 });
+      pts.push({ id: `pt-${Date.now()}-2`, x: cx + size/2, y: cy - size/2 });
+      pts.push({ id: `pt-${Date.now()}-3`, x: cx + size/2, y: cy + size/2 });
+      pts.push({ id: `pt-${Date.now()}-4`, x: cx - size/2, y: cy + size/2 });
+    } else if (type === 'circle') {
+      const numPoints = 36;
+      for (let i = 0; i < numPoints; i++) {
+        const angle = (i / numPoints) * Math.PI * 2;
+        pts.push({
+          id: `pt-${Date.now()}-${i}`,
+          x: cx + Math.cos(angle) * (size/2),
+          y: cy + Math.sin(angle) * (size/2)
+        });
+      }
+    } else if (type === 'triangle') {
+      pts.push({ id: `pt-${Date.now()}-1`, x: cx, y: cy - size/2 });
+      pts.push({ id: `pt-${Date.now()}-2`, x: cx + size/2, y: cy + size/2 });
+      pts.push({ id: `pt-${Date.now()}-3`, x: cx - size/2, y: cy + size/2 });
+    } else if (type === 'star') {
+      const numPoints = 10;
+      for (let i = 0; i < numPoints; i++) {
+        const angle = (i / numPoints) * Math.PI * 2 - Math.PI / 2;
+        const radius = i % 2 === 0 ? size/2 : size/4;
+        pts.push({
+          id: `pt-${Date.now()}-${i}`,
+          x: cx + Math.cos(angle) * radius,
+          y: cy + Math.sin(angle) * radius
+        });
+      }
+    } else if (type === 'heart') {
+      const numPoints = 30;
+      for (let i = 0; i < numPoints; i++) {
+        const t = (i / numPoints) * Math.PI * 2;
+        // Heart curve equations
+        const x = 16 * Math.pow(Math.sin(t), 3);
+        const y = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+        pts.push({
+          id: `pt-${Date.now()}-${i}`,
+          x: cx + x * (size/35),
+          y: cy + y * (size/35)
+        });
+      }
+    } else if (type === 'line') {
+      pts.push({ id: `pt-${Date.now()}-1`, x: cx - size/2, y: cy });
+      pts.push({ id: `pt-${Date.now()}-2`, x: cx + size/2, y: cy });
+    } else if (type === 'curve') {
+      const numPoints = 20;
+      for (let i = 0; i < numPoints; i++) {
+        const t = i / (numPoints - 1);
+        const x = (1 - t) * (1 - t) * (cx - size/2) + 2 * (1 - t) * t * cx + t * t * (cx + size/2);
+        const y = (1 - t) * (1 - t) * cy + 2 * (1 - t) * t * (cy - size) + t * t * cy;
+        pts.push({
+          id: `pt-${Date.now()}-${i}`,
+          x,
+          y
+        });
+      }
+    }
+
+    const newStroke: Stroke = {
+      id: `st-${Date.now()}`,
+      points: pts,
+      color: activeColor,
+      width: 4,
+      closed: type !== 'line' && type !== 'curve',
+      baseFill: type !== 'line' && type !== 'curve' ? '#ffffff' : undefined
+    };
+    
+    setStrokes(prev => [...prev, newStroke]);
+    setShowShapesModal(false);
+  }, [activeColor, saveForUndo]);
 
   const createMannequinWithMeasurements = useCallback((measures: MannequinMeasurements) => {
     saveForUndo();
@@ -1519,6 +1601,52 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       )}
+      {showShapesModal && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowShapesModal(false)}>
+          <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-md w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h2 className="text-base sm:text-lg font-black uppercase text-slate-900">Add Shape</h2>
+                <p className="text-[10px] text-slate-500 mt-1">Select a shape to add to your canvas</p>
+              </div>
+              <button onClick={() => setShowShapesModal(false)} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <button onClick={() => addShapeToCanvas('square')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
+                <div className="w-12 h-12 bg-slate-200 group-hover:bg-indigo-400 transition-colors mb-2"></div>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Square</span>
+              </button>
+              <button onClick={() => addShapeToCanvas('circle')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
+                <div className="w-12 h-12 bg-slate-200 group-hover:bg-indigo-400 transition-colors rounded-full mb-2"></div>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Circle</span>
+              </button>
+              <button onClick={() => addShapeToCanvas('triangle')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
+                <div className="w-0 h-0 border-l-[24px] border-l-transparent border-r-[24px] border-r-transparent border-b-[41.6px] border-b-slate-200 group-hover:border-b-indigo-400 transition-colors mb-2"></div>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Triangle</span>
+              </button>
+              <button onClick={() => addShapeToCanvas('star')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Star</span>
+              </button>
+              <button onClick={() => addShapeToCanvas('heart')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Heart</span>
+              </button>
+              <button onClick={() => addShapeToCanvas('line')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20L20 4"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Line</span>
+              </button>
+              <button onClick={() => addShapeToCanvas('curve')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
+                <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20 Q 12 4 20 20"/></svg>
+                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Curve</span>
+              </button>
+            </div>
+            <div className="mt-8">
+              <button onClick={() => setShowShapesModal(false)} className="w-full bg-slate-100 text-slate-600 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
       <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-gradient-to-r from-amber-50 to-orange-50 border-b-2 border-amber-200 shrink-0 z-[100] shadow-md">
         <div className="flex items-center gap-2 sm:gap-4">
           <button id="trace-btn" onClick={() => setIsSidebarOpen(true)} className="lg:hidden bg-gradient-to-r from-amber-400 to-orange-400 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all">Trace</button>
@@ -1650,7 +1778,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           )}
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
-            {(["cursor", "pen", "fill", "erase"] as const).map((t) => (<button key={t} id={`${t}-tool`} onClick={() => setActiveTool(t)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400'}`}><span className="text-[10px] font-black uppercase">{t.charAt(0)}</span></button>))}
+            {(["cursor", "pen", "shapes", "fill", "erase"] as const).map((t) => (<button key={t} id={t === "shapes" ? "shapes-btn" : `${t}-tool`} onClick={() => t === "shapes" ? setShowShapesModal(true) : setActiveTool(t as any)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400 hover:bg-slate-100'}`}><span className="text-[10px] font-black uppercase">{t.charAt(0)}</span></button>))}
             <div className="relative mt-2">
               <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
               {showColorPanel && (
@@ -1993,7 +2121,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 })}
                 {strokes.map(s => (
                   <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
-                    {s.baseFill && <path d={generatePathData(s.points, false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
+                    {s.baseFill && <path d={generatePathData(s.points, s.closed ?? false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
                     {s.fillColor && s.clothType && s.clothType !== 'solid' ? (
                       <>
                         <defs>
@@ -2016,10 +2144,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             )}
                           </pattern>
                         </defs>
-                            <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.color} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
                       </>
                     ) : (
-                      <path d={generatePathData(s.points, false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
+                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
                     )}
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
