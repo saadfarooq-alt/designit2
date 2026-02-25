@@ -102,6 +102,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [pickColorMode, setPickColorMode] = useState<boolean>(false);
   const [pickThreshold, setPickThreshold] = useState<number>(12);
   const [showColorPanel, setShowColorPanel] = useState(false);
+  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -1087,6 +1088,38 @@ export function Studio({ onBack }: { onBack: () => void }) {
     img.src = url;
   };
 
+  // Export a single shape's image (respects shape.scale for displayed size)
+  const downloadShapeImage = async (shapeId: string, type: 'png' | 'jpg' = 'png') => {
+    const shape = workspaceShapes.find(s => s.id === shapeId);
+    if (!shape) { alert('Shape not found'); return; }
+    try {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = shape.img; });
+      const w = Math.max(1, Math.round(shape.dims.width * (shape.scale || 1)));
+      const h = Math.max(1, Math.round(shape.dims.height * (shape.scale || 1)));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { alert('Canvas unavailable'); return; }
+      if (type === 'jpg') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,w,h); }
+      ctx.drawImage(img, 0, 0, w, h);
+      const mime = type === 'jpg' ? 'image/jpeg' : 'image/png';
+      const dataUrl = canvas.toDataURL(mime);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = `${shape.id}.${type}`;
+      a.click();
+    } catch (err) {
+      console.error('downloadShapeImage failed', err);
+      alert('Failed to download shape image — try uploading the image (CORS)');
+    }
+  };
+
+  const handleDownload = (type: 'png' | 'jpg' = 'png') => {
+    if (selectedShapeId) downloadShapeImage(selectedShapeId, type); else downloadImage(type);
+  };
+
   function pasteFromClipboard() {
     // TODO: Implement clipboard paste logic
     console.log('Paste from clipboard triggered');
@@ -1146,14 +1179,14 @@ export function Studio({ onBack }: { onBack: () => void }) {
           <span className="w-5 h-5 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full flex items-center justify-center text-[10px] font-black">?</span>
           <span className="text-[10px] font-black text-slate-900">for interactive tutorial</span>
         </div>
-        <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
           <button id="dress-form-btn" onClick={() => setShowMannequinModal(true)} className="px-2 sm:px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1">
             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z"/></svg>
             <span className="hidden sm:inline">Dress Form</span>
           </button>
           <button id="undo-btn" onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100">Undo</button>
           <button id="reset-btn" onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100">Reset</button>
-          <button id="download-btn" onClick={() => downloadImage('jpg')} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100">Download</button>
+          <button id="download-btn" onClick={() => handleDownload('png')} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100">Download</button>
           <button id="dots-btn" onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 text-yellow-700' : 'bg-white text-slate-400'}`}>Dots</button>
           <button id="lock-btn" onClick={() => setIsLocked(!isLocked)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${isLocked ? 'bg-sky-500 text-white' : 'bg-white text-sky-500'}`}>Lock</button>
         </div>
@@ -1424,7 +1457,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
                             if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                          }} />
+                          }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                           {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                           {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.rx, y: c.ry }); }} />}
                         </>
@@ -1443,7 +1476,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                             if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : s)); return; }
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                          }} />
+                          }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                           {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
                           {shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />}
                           {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
