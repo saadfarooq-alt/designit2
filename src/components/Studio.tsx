@@ -99,6 +99,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [activeColor, setActiveColor] = useState("#27EEF5");
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [keepOriginalColor, setKeepOriginalColor] = useState<boolean>(false);
+  const [pickColorMode, setPickColorMode] = useState<boolean>(false);
+  const [pickThreshold, setPickThreshold] = useState<number>(12);
   const [showColorPanel, setShowColorPanel] = useState(false);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
@@ -129,6 +131,67 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const saveForUndo = useCallback(() => {
     setHistory(h => [...h, { shapes: JSON.parse(JSON.stringify(workspaceShapes)), strokes: JSON.parse(JSON.stringify(strokes)) }].slice(-50));
   }, [workspaceShapes, strokes]);
+
+  // Remove sampled color from a shape's image (chroma key)
+  const handlePickRemove = useCallback(async (shape: DistortableShape, clientX: number, clientY: number) => {
+    try {
+      saveForUndo();
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      const src = shape.img;
+      const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+        img.onload = () => resolve(img);
+        img.onerror = (err) => reject(err);
+        img.src = src;
+      });
+
+      const canvas = document.createElement('canvas');
+      const w = shape.dims.width;
+      const h = shape.dims.height;
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context unavailable');
+      ctx.clearRect(0,0,w,h);
+      ctx.drawImage(loaded, 0, 0, w, h);
+
+      // Map client coordinates to image-local pixel coordinates
+      const localX = clientX - shape.position.x;
+      const localY = clientY - shape.position.y;
+      const imgX = Math.round(localX / shape.scale);
+      const imgY = Math.round(localY / shape.scale);
+      if (imgX < 0 || imgY < 0 || imgX >= w || imgY >= h) {
+        alert('Click was outside the image bounds');
+        return;
+      }
+
+      const pickData = ctx.getImageData(imgX, imgY, 1, 1).data;
+      const tr = pickData[0], tg = pickData[1], tb = pickData[2];
+
+      const imageData = ctx.getImageData(0,0,w,h);
+      const data = imageData.data;
+      const maxDist = Math.sqrt(255*255*3);
+      const thresh = (pickThreshold / 100) * maxDist;
+      const threshSq = thresh * thresh;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i], g = data[i+1], b = data[i+2];
+        const dr = r - tr, dg = g - tg, db = b - tb;
+        const distSq = dr*dr + dg*dg + db*db;
+        if (distSq <= threshSq) {
+          data[i+3] = 0; // make transparent
+        }
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      const newUrl = canvas.toDataURL('image/png');
+      setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, img: newUrl } : s));
+      setPickColorMode(false);
+    } catch (err) {
+      console.error('Pick-remove failed', err);
+      alert('Could not edit image. This is usually a CORS issue — try uploading the image from your computer.');
+    }
+  }, [pickThreshold, saveForUndo]);
 
   const undo = useCallback(() => {
     if (history.length === 0) return;
@@ -1140,7 +1203,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           </div>
         </aside>
-        <main className="flex-1 bg-[#F9F9FB] relative overflow-hidden">
+        <main className="flex-1 bg-[#F9F9FB] relative overflow-visible">
           {/* Top toolbar removed - Download moved into header controls */}
           {ghostCursor.active && (
             <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
@@ -1186,7 +1249,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             <div className="relative mt-2">
               <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
               {showColorPanel && (
-                <div className="absolute left-10 top-0 mt-0 p-3 bg-white rounded shadow-xl z-50 w-40">
+                <div className="absolute left-10 bottom-full mb-2 p-3 bg-white rounded shadow-xl z-50 w-40">
                   <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-full h-10 p-0" />
                   <div className="flex items-center gap-2 mt-2">
                     <label className="text-[10px] font-black uppercase text-slate-600">Fill</label>
@@ -1205,6 +1268,19 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       </div>
                     </label>
                   </div>
+                  <div className="mt-3">
+                    <label className="text-[10px] font-black uppercase text-slate-700">Remove color from image</label>
+                    <div className="flex items-center gap-2 mt-2">
+                      <input id="pick-threshold" type="range" min={0} max={100} value={pickThreshold} onChange={e => setPickThreshold(parseInt(e.target.value, 10))} className="flex-1" />
+                      <span className="text-[10px] font-bold">{pickThreshold}%</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <button onClick={() => { setPickColorMode(true); setShowColorPanel(false); }} className="px-3 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl text-[10px] font-black uppercase shadow-md hover:shadow-lg">Pick & Remove</button>
+                      <button onClick={() => { setPickColorMode(false); }} className="px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-xl text-[10px] font-black uppercase">Cancel</button>
+                    </div>
+                    {pickColorMode && <div className="text-[11px] mt-2 text-slate-500">Click an image on the canvas to sample a color; matching pixels will be made transparent.</div>}
+                  </div>
+                  
                 </div>
               )}
             </div>
@@ -1345,7 +1421,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           <defs>
                             <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
                           </defs>
-                          <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
+                          <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
+                            if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                           }} />
                           {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
@@ -1362,7 +1439,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               </mask>
                             )}
                           </defs>
-                          <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
+                          <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
+                            if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                             if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : s)); return; }
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                           }} />
