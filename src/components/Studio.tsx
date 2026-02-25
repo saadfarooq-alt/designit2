@@ -98,6 +98,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
   const [activeColor, setActiveColor] = useState("#27EEF5");
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
+  const [keepOriginalColor, setKeepOriginalColor] = useState<boolean>(false);
   const [showColorPanel, setShowColorPanel] = useState(false);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
@@ -469,7 +470,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
       }
         else if (step.action === "fill_shape") {
         saveForUndo();
-        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, baseFill: '#ffffff', fillColor: hexToRgba(activeColor, activeFillOpacity) } : s));
+        setStrokes(prev => prev.map(s => s.id === "tuto-stroke" ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : s));
       }
       else if (step.action === "erase_action") {
         saveForUndo();
@@ -1089,7 +1090,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </button>
           <button id="undo-btn" onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100">Undo</button>
           <button id="reset-btn" onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100">Reset</button>
-          {/* <button onClick={downloadSVG} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100">Download</button> */}
+          <button id="download-btn" onClick={() => downloadImage('jpg')} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100">Download</button>
           <button id="dots-btn" onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 text-yellow-700' : 'bg-white text-slate-400'}`}>Dots</button>
           <button id="lock-btn" onClick={() => setIsLocked(!isLocked)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${isLocked ? 'bg-sky-500 text-white' : 'bg-white text-sky-500'}`}>Lock</button>
         </div>
@@ -1140,15 +1141,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
         </aside>
         <main className="flex-1 bg-[#F9F9FB] relative overflow-hidden">
-          {/* Top toolbar */}
-          <div className="absolute top-4 right-4 z-50 flex items-center gap-2">
-            <button
-              onClick={() => downloadImage('jpg')}
-              className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700 transition"
-            >
-              Download
-            </button>
-          </div>
+          {/* Top toolbar removed - Download moved into header controls */}
           {ghostCursor.active && (
             <div className="fixed pointer-events-none z-[1000] transition-all duration-700 ease-in-out flex flex-col items-center" style={{ left: ghostCursor.x, top: ghostCursor.y, transform: 'translate(-50%, -50%)' }}>
               <div className={`w-8 h-8 rounded-full border-4 border-yellow-400 bg-yellow-400/30 transition-transform ${ghostCursor.clicking ? 'scale-75' : 'scale-100'}`} />
@@ -1199,6 +1192,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     <label className="text-[10px] font-black uppercase text-slate-600">Fill</label>
                     <input id="fill-opacity" type="range" min={0} max={100} value={Math.round(activeFillOpacity * 100)} onChange={e => setActiveFillOpacity(parseInt(e.target.value, 10) / 100)} className="flex-1" />
                     <span className="text-[10px] font-bold">{Math.round(activeFillOpacity * 100)}%</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3 mt-3">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase text-slate-700">Keep original color</span>
+                      <span className="text-[10px] text-slate-400">Preserve underlying image colors through transparency</span>
+                    </div>
+                    <label className={`relative inline-flex items-center cursor-pointer select-none`}>
+                      <input id="keep-original-color" type="checkbox" checked={keepOriginalColor} onChange={e => setKeepOriginalColor(e.target.checked)} className="sr-only" />
+                      <div className={`${keepOriginalColor ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-slate-200'} w-12 h-6 rounded-full p-1 transition-colors`}>
+                        <div className={`${keepOriginalColor ? 'translate-x-6' : 'translate-x-0'} w-4 h-4 bg-white rounded-full shadow transform transition-transform`} />
+                      </div>
+                    </label>
                   </div>
                 </div>
               )}
@@ -1358,7 +1363,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             )}
                           </defs>
                           <image href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
-                            if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, baseFill: '#ffffff', fillColor: hexToRgba(activeColor, activeFillOpacity) } : s)); return; }
+                            if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : s)); return; }
                             if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                           }} />
                           {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
@@ -1374,7 +1379,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 {strokes.map(s => (
                   <g key={s.id} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                     {s.baseFill && <path d={generatePathData(s.points)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
-                    <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, baseFill: '#ffffff', fillColor: hexToRgba(activeColor, activeFillOpacity) } : st)); } }} />
+                    <path d={generatePathData(s.points)} stroke={s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity) } : st)); } }} />
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
                     ))}
