@@ -412,6 +412,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [pickThreshold, setPickThreshold] = useState<number>(12);
   const [showColorPanel, setShowColorPanel] = useState(false);
   const [showFabricDropdown, setShowFabricDropdown] = useState(false);
+  const [isFabricLoading, setIsFabricLoading] = useState(false);
   const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
@@ -1897,7 +1898,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     <label className="text-[10px] font-black uppercase text-slate-700">Cloth Type</label>
                     <div 
                       className="w-full mt-1 p-2 border rounded text-sm cursor-pointer flex items-center justify-between bg-white"
-                      onClick={() => setShowFabricDropdown(!showFabricDropdown)}
+                      onClick={() => {
+                        if (!showFabricDropdown) {
+                          setIsFabricLoading(true);
+                          // Small delay to allow UI to update with loading state before rendering the heavy dropdown
+                          setTimeout(() => {
+                            setShowFabricDropdown(true);
+                            setIsFabricLoading(false);
+                          }, 50);
+                        } else {
+                          setShowFabricDropdown(false);
+                        }
+                      }}
                     >
                       <div className="flex items-center gap-2">
                         {selectedClothType !== 'solid' && getFabricImagePath(selectedClothType) ? (
@@ -1909,7 +1921,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
                         )}
                         <span>{fabricOptions.find(o => o.value === selectedClothType)?.label || 'Solid'}</span>
                       </div>
-                      <span className="text-xs">▼</span>
+                      {isFabricLoading ? (
+                        <span className="text-xs animate-spin">⏳</span>
+                      ) : (
+                        <span className="text-xs">▼</span>
+                      )}
                     </div>
                     
                     {showFabricDropdown && (
