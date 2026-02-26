@@ -114,6 +114,9 @@ export const metadata: Metadata = {
     icon: "/favicon.ico",
     apple: "/apple-touch-icon.png",
   },
+};
+
+export const viewport = {
   themeColor: "#800000",
 };
 

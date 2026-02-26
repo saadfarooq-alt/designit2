@@ -23,25 +23,36 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
         </div>
       </nav>
 
-      <main className="flex-1 flex flex-col items-center justify-center px-6 text-center">
-        <h1 className="text-6xl md:text-8xl font-black mb-6 leading-tight text-slate-800">
-          CRAFT YOUR <br /> <span className="text-[#800000]">Design.</span>
-        </h1>
-        <p className="text-slate-600 text-lg md:text-2xl max-w-2xl mb-10 font-semibold">
-          The ultimate digital studio for jewelry and clothes designers. Pull, Trace, edit, and reimagine 
-          designs with professional vector tools.
-        </p>
-        <div className="flex gap-4">
-          <button onClick={onStart} className="bg-black text-white px-12 py-5 rounded-full font-black uppercase text-sm shadow-2xl hover:shadow-3xl hover:scale-105 transition-all hover:bg-slate-800">
-            Start Designing →
-          </button>
+      <main className="flex-1 flex flex-col lg:flex-row items-center justify-center gap-12 px-6 lg:px-12 py-12 max-w-[1400px] mx-auto w-full">
+        <div className="flex-1 flex flex-col items-center lg:items-start text-center lg:text-left">
+          <h1 className="text-6xl md:text-7xl xl:text-8xl font-black mb-6 leading-tight text-slate-800">
+            CRAFT YOUR <br /> <span className="text-[#800000]">Design.</span>
+          </h1>
+          <p className="text-slate-600 text-lg md:text-2xl max-w-2xl mb-10 font-semibold">
+            The ultimate digital studio for jewelry and clothes designers. Pull, Trace, edit, and reimagine 
+            designs with professional vector tools.
+          </p>
+          <div className="flex gap-4">
+            <button onClick={onStart} className="bg-black text-white px-12 py-5 rounded-full font-black uppercase text-sm shadow-2xl hover:shadow-3xl hover:scale-105 transition-all hover:bg-slate-800">
+              Start Designing →
+            </button>
+          </div>
         </div>
         
-        {/* Mockup of the app */}
-        <div className="mt-16 w-full max-w-4xl rounded-t-[3rem] border-x-[12px] border-t-[12px] border-amber-300 shadow-2xl overflow-hidden h-[300px] bg-gradient-to-br from-amber-100 to-orange-100">
-           <div className="w-full h-full bg-gradient-to-br from-amber-200 via-orange-200 to-yellow-200 flex items-center justify-center font-black text-slate-600 italic uppercase text-xl">
-             ✨ Studio Preview ✨
-           </div>
+        {/* Prominent Video Section */}
+        <div className="flex-1 w-full max-w-3xl rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] overflow-hidden border-8 border-white bg-white">
+           <video 
+             src="/demo_video.mp4" 
+             controls
+             autoPlay
+             muted
+             loop
+             playsInline
+             className="w-full h-auto object-cover rounded-xl"
+             poster="/logo.png"
+           >
+             Your browser does not support the video tag.
+           </video>
         </div>
       </main>
     </div>
