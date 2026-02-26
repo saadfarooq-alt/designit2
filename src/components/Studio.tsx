@@ -1759,25 +1759,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 <>
                   <button
                     onClick={() => {
-                      if (contextMenu.type !== "selection") bringToFront(contextMenu.id, contextMenu.type as "shape" | "stroke");
+                      if (contextMenu.type === "shape" || contextMenu.type === "stroke") bringToFront(contextMenu.id, contextMenu.type);
                     }}
-                    className={`w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 ${contextMenu.type === "selection" ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}
-                    disabled={contextMenu.type === "selection"}
+                    className="w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 hover:bg-slate-50"
                   >
                     Bring to Front
                   </button>
                   <button
                     onClick={() => {
-                      if (contextMenu.type !== "selection") sendToBack(contextMenu.id, contextMenu.type as "shape" | "stroke");
+                      if (contextMenu.type === "shape" || contextMenu.type === "stroke") sendToBack(contextMenu.id, contextMenu.type);
                     }}
-                    className={`w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 ${contextMenu.type === "selection" ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}
-                    disabled={contextMenu.type === "selection"}
+                    className="w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 hover:bg-slate-50"
                   >
                     Send to Back
                   </button>
-                  {contextMenu.type === "selection" && (
-                    <div className="w-full text-left px-4 py-2 text-[9px] text-slate-400 font-bold uppercase border-b border-slate-100">Select a shape or pen stroke to use these options</div>
-                  )}
                   {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
                     <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
                       🎀 Drape to Mannequin
