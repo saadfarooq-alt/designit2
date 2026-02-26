@@ -5,6 +5,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import ImageTracer from "imagetracerjs";
+import { removeBackground, preload } from '@imgly/background-removal';
 
 const AdBanner = () => {
   useEffect(() => {
@@ -396,6 +397,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isRemovingBg, setIsRemovingBg] = useState(false);
   const [tutorialStep, setTutorialStep] = useState<number | null>(null);
   const [tutorialDisabled, setTutorialDisabled] = useState(false);
   const [ghostCursor, setGhostCursor] = useState({ x: 0, y: 0, active: false, clicking: false });
@@ -1256,10 +1258,28 @@ export function Studio({ onBack }: { onBack: () => void }) {
         URL.revokeObjectURL(url);
         const mime = asJpeg ? 'image/jpeg' : 'image/png';
         const dataUrl = canvas.toDataURL(mime);
-        const link = document.createElement('a');
-        link.download = `selection-extract-${Date.now()}.${asJpeg ? 'jpg' : 'png'}`;
-        link.href = dataUrl;
-        link.click();
+        
+        // Add extracted image to workspace instead of downloading
+        saveForUndo();
+        const newShape: DistortableShape = {
+          id: `extracted-${Date.now()}`,
+          img: dataUrl,
+          dots: [
+            { id: 'tl', x: 0, y: 0 },
+            { id: 'tr', x: rectW, y: 0 },
+            { id: 'br', x: rectW, y: rectH },
+            { id: 'bl', x: 0, y: rectH }
+          ],
+          dims: { width: rectW, height: rectH },
+          position: { x: rectX + 20, y: rectY + 20 },
+          scale: 1,
+          showDots: true,
+          fillColor: undefined,
+          erasedPaths: []
+        };
+        
+        setWorkspaceShapes(prev => [...prev, newShape]);
+        alert('Extracted image added to workspace!');
       };
       img.src = url;
     } catch (err) {
@@ -1412,6 +1432,65 @@ export function Studio({ onBack }: { onBack: () => void }) {
       reader.readAsDataURL(file);
     }
   };
+
+  const handleRemoveBackground = async () => {
+    if (!selectedImage) return;
+    
+    try {
+      setIsRemovingBg(true);
+      console.log("Starting background removal...");
+      
+      // Get absolute URL for publicPath
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const publicPath = `${origin}/background-removal-data/`;
+      console.log("Using publicPath:", publicPath);
+      
+      const config = {
+        publicPath: publicPath,
+        debug: false
+      };
+      
+      // Preload assets first
+      console.log("Preloading assets...");
+      await preload(config);
+      console.log("Assets preloaded successfully");
+      
+      // Convert data URL to blob for better handling
+      let imageInput: Blob | string = selectedImage;
+      if (selectedImage.startsWith('data:')) {
+        console.log("Converting data URL to Blob...");
+        const response = await fetch(selectedImage);
+        imageInput = await response.blob();
+        console.log("Blob created, size:", imageInput.size);
+      }
+      
+      // Call removeBackground with proper config
+      console.log("Calling removeBackground...");
+      const imageBlob = await removeBackground(imageInput, config);
+      console.log("Background removed successfully, blob size:", imageBlob.size);
+      
+      // Convert the resulting blob back to a data URL
+      const reader = new FileReader();
+      reader.readAsDataURL(imageBlob);
+      reader.onloadend = () => {
+        const base64data = reader.result as string;
+        setSelectedImage(base64data);
+        setIsRemovingBg(false);
+        console.log("Background removal complete!");
+      };
+      reader.onerror = () => {
+        console.error("FileReader error:", reader.error);
+        throw new Error("Failed to read blob");
+      };
+    } catch (error) {
+      console.error("Error removing background:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      alert(`Failed to remove background: ${errorMessage}`);
+      setIsRemovingBg(false);
+    }
+  };
+
+
 
   const sweepErase = (x: number, y: number) => {
     setStrokes(prev => prev.map(st => ({ ...st, points: st.points.filter(p => Math.hypot(p.x - x, p.y - y) > ERASE_RADIUS) })).filter(st => st.points.length > 0));
@@ -1740,10 +1819,32 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 }
               }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-blue-900 text-amber-300 py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-30">Add to Canvas</button>
             </div>
+            {selectedImage && (
+              <div className="mb-3">
+                <button 
+                  onClick={handleRemoveBackground} 
+                  disabled={isRemovingBg}
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {isRemovingBg ? (
+                    <>
+                      <span className="animate-spin">⏳</span> Removing AI Background...
+                    </>
+                  ) : (
+                    <>✨ AI Remove Background</>
+                  )}
+                </button>
+              </div>
+            )}
+
           </div>
           <div className="flex-1 p-4 overflow-hidden flex flex-col gap-4">
             <div className="flex-1 bg-gradient-to-br from-amber-100 to-orange-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-amber-200 shadow-inner">
-              <svg id="trace-svg-container" viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-4">
+              <svg 
+                id="trace-svg-container" 
+                viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} 
+                className="w-full h-full p-4"
+              >
                 {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
                 {candidates.map((c, idx) => (<path key={c.id} id={idx === 0 ? "path-0-0" : c.id} d={c.d} fill={c.selected ? "rgba(251, 146, 60, 0.5)" : "transparent"} stroke={c.selected ? "#f97316" : "#cbd5e1"} strokeWidth={4} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />))}
                 {sourceDots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={8} fill="#f97316" stroke="#ffffff" strokeWidth={3} opacity={0.9} />))}
