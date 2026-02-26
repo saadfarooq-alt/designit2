@@ -21,7 +21,7 @@ export default function Page() {
     <main className="relative w-full h-[100dvh] overflow-hidden bg-white">
       {/* LANDING PAGE / WEBSITE VIEW */}
       <div 
-        className={`absolute inset-0 z-20 transition-all duration-1000 ease-in-out ${
+        className={`absolute inset-0 z-20 transition-all duration-1000 ease-in-out overflow-y-auto ${
           inStudio ? "-translate-y-full opacity-0 pointer-events-none" : "translate-y-0 opacity-100"
         }`}
       >

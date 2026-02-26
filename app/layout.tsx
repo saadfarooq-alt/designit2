@@ -5,6 +5,8 @@ import "./globals.css";
 import { Analytics } from "@vercel/analytics/next";
 // app/layout.tsx
 import React from "react";
+import Script from "next/script";
+import CookieConsent from "../src/components/CookieConsent";
 
 export const metadata: Metadata = {
   title: "DesignIt - Free Online Design Tool for Clothes, Jewelry & More | Canva Alternative",
@@ -172,7 +174,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7392693183875834" crossOrigin="anonymous"></script>
         {/* The Next.js metadata API injects the metadata above. Add structured data and canonical link */}
         <script
           type="application/ld+json"
@@ -182,7 +183,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="canonical" href="https://idesignits.com/" />
       </head>
       <body>
+        <Script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7392693183875834" crossOrigin="anonymous" strategy="afterInteractive" />
         {children}
+        <CookieConsent />
         <Analytics />
       </body>
     </html>

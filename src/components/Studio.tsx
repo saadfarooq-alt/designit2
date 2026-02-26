@@ -6,6 +6,32 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import ImageTracer from "imagetracerjs";
 
+const AdBanner = () => {
+  useEffect(() => {
+    try {
+      // @ts-ignore
+      const adsbygoogle = window.adsbygoogle || [];
+      // Only push if the ad hasn't been initialized yet
+      if (adsbygoogle.length === 0) {
+        adsbygoogle.push({});
+      }
+    } catch (err) {
+      console.error('AdSense error:', err);
+    }
+  }, []);
+
+  return (
+    <div className="w-full bg-slate-100 border-t border-slate-200 flex justify-center items-center py-2 shrink-0 min-h-[60px] md:min-h-[100px] overflow-hidden z-50 relative">
+      <ins className="adsbygoogle"
+           style={{ display: 'block', width: '100%', maxWidth: '728px', height: '90px' }}
+           data-ad-client="ca-pub-7392693183875834"
+           data-ad-slot="auto"
+           data-ad-format="auto"
+           data-full-width-responsive="true"></ins>
+    </div>
+  );
+};
+
 interface Dot { id: string; x: number; y: number; }
 interface DistortableShape {
   id: string;
@@ -2290,6 +2316,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             ))}
           </div>
         </div>
+        <AdBanner />
       </div>
   );
 }

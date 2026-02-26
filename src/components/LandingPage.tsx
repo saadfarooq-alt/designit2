@@ -1,6 +1,7 @@
 "use client";
 import React from "react";
 import Link from "next/link";
+import Footer from "./Footer";
 
 export default function LandingPage({ onStart }: { onStart: () => void }) {
   return (
@@ -55,6 +56,7 @@ export default function LandingPage({ onStart }: { onStart: () => void }) {
            </video>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
+import Footer from "../../src/components/Footer";
 
 export default function AboutPage() {
   return (
@@ -140,9 +141,7 @@ export default function AboutPage() {
         </div>
       </main>
 
-      <footer className="bg-gradient-to-br from-slate-800 to-blue-900 text-white py-8 px-6 text-center">
-        <p className="text-slate-200">&copy; {new Date().getFullYear()} Learncapes Inc. All rights reserved.</p>
-      </footer>
+      <Footer />
     </div>
   );
 }
