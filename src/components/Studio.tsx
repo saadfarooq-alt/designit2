@@ -66,6 +66,7 @@ interface Stroke {
   groupId?: string;
   closed?: boolean;
   zIndex?: number;
+  visible?: boolean;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean; };
@@ -433,7 +434,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
-  const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
+  const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "ghost" | "fill" | "erase">("cursor");
   const [workspaceBgColor, setWorkspaceBgColor] = useState<string>('amber');
   const [activeColor, setActiveColor] = useState("#27EEF5");
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
@@ -1369,6 +1370,25 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setContextMenu(null);
   };
 
+  const toggleGroupStrokes = (shapeId: string) => {
+    saveForUndo();
+    const shape = workspaceShapes.find(s => s.id === shapeId);
+    
+    if (shape && shape.groupId) {
+      const groupStrokes = strokes.filter(s => s.groupId === shape.groupId);
+      const areAnyVisible = groupStrokes.some(s => s.visible !== false);
+      const newVisibleState = !areAnyVisible;
+
+      setStrokes(prev => prev.map(s => {
+        if (s.groupId === shape.groupId) {
+          return { ...s, visible: newVisibleState };
+        }
+        return s;
+      }));
+    }
+    setContextMenu(null);
+  };
+
   useEffect(() => {
     async function load() {
       try {
@@ -1939,13 +1959,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       🎨 Pick & Replace Color
                     </button>
                   )}
+                  {contextMenu.type === "shape" && workspaceShapes.find(s => s.id === contextMenu.id)?.groupId && (
+                    <button onClick={() => toggleGroupStrokes(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100 text-slate-600">
+                      👁️ Toggle Strokes
+                    </button>
+                  )}
                   <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else if (contextMenu.type === "stroke") setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">Delete Item</button>
                 </>
               )}
             </div>
           )}
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
-            {(["cursor", "pen", "shapes", "fill", "erase"] as const).map((t) => (<button key={t} id={t === "shapes" ? "shapes-btn" : `${t}-tool`} onClick={() => t === "shapes" ? setShowShapesModal(true) : setActiveTool(t as any)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400 hover:bg-slate-100'}`}><span className="text-[10px] font-black uppercase">{t.charAt(0)}</span></button>))}
+            {(["cursor", "pen", "ghost", "shapes", "fill", "erase"] as const).map((t) => (<button key={t} id={t === "shapes" ? "shapes-btn" : `${t}-tool`} onClick={() => t === "shapes" ? setShowShapesModal(true) : setActiveTool(t as any)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400 hover:bg-slate-100'}`}><span className="text-[10px] font-black uppercase">{t === "ghost" ? "👻" : t.charAt(0)}</span></button>))}
             <div className="relative mt-2">
               <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
               {showColorPanel && (
@@ -2063,13 +2088,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
             }
             
             if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
-            if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; 
+            if (activeTool === "pen" || activeTool === "ghost") { saveForUndo(); const sid = `st-${Date.now()}`; 
               const maxZ = Math.max(
                 ...workspaceShapes.map(s => s.zIndex || 0),
                 ...strokes.map(s => s.zIndex || 0),
                 0
               );
-              setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4, zIndex: maxZ + 1 }]);
+              setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4, zIndex: maxZ + 1, visible: activeTool === "pen" }]);
               penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid };
               e.currentTarget.setPointerCapture(e.pointerId);
               return;
@@ -2081,7 +2106,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               setSelectionRect(prev => prev ? { ...prev, x2: c.x, y2: c.y } : null);
             }
             
-            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if (activeTool === "pen" && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
+            if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if ((activeTool === "pen" || activeTool === "ghost") && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
                 penRef.current!.lastX = c.x;
                 penRef.current!.lastY = c.y;
               } } else if (draggingStrokeDot) { setStrokes(prev => prev.map(s => s.id === draggingStrokeDot.strokeId ? { ...s, points: s.points.map(p => p.id === draggingStrokeDot.dotId ? { ...p, x: c.x, y: c.y } : p) } : s));
@@ -2363,7 +2388,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               ) : (
                                 shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
                               )}
-                              {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
+                              <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />
                               {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={idx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                               {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                               {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
@@ -2403,10 +2428,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             )}
                           </pattern>
                         </defs>
-                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                       </>
                     ) : (
-                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
+                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.visible === false ? "5,5" : undefined} opacity={s.visible === false ? 0.3 : 1} onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                     )}
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
