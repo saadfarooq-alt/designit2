@@ -172,6 +172,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <head>
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7392693183875834" crossOrigin="anonymous"></script>
         {/* The Next.js metadata API injects the metadata above. Add structured data and canonical link */}
         <script
           type="application/ld+json"

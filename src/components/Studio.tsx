@@ -1793,8 +1793,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
             <div className="relative mt-2">
               <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
               {showColorPanel && (
-                <div className="absolute left-12 top-1/2 -translate-y-1/2 p-3 bg-white rounded shadow-xl z-50 w-48">
-                  <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-full h-10 p-0" />
+                <div className="fixed left-14 top-1/2 -translate-y-1/2 p-3 bg-white rounded shadow-xl z-50 w-[calc(100vw-4.5rem)] max-w-[16rem] sm:w-56 max-h-[75vh] sm:max-h-[85vh] overflow-y-auto">
+                  <input id="color-picker" type="color" value={activeColor} onChange={e => setActiveColor(e.target.value)} className="w-full h-10 p-0 cursor-pointer" />
                   <div className="flex items-center gap-2 mt-2">
                     <label className="text-[10px] font-black uppercase text-slate-600">Fill</label>
                     <input id="fill-opacity" type="range" min={0} max={100} value={Math.round(activeFillOpacity * 100)} onChange={e => setActiveFillOpacity(parseInt(e.target.value, 10) / 100)} className="flex-1" />
@@ -1847,7 +1847,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     </div>
                     
                     {showFabricDropdown && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border rounded shadow-xl max-h-60 overflow-y-auto">
+                      <div className="relative z-50 w-full mt-1 bg-white border rounded shadow-inner max-h-48 overflow-y-auto">
                         {fabricOptions.map(option => (
                           <div 
                             key={option.value}
