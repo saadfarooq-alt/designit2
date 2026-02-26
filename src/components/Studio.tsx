@@ -24,6 +24,7 @@ interface DistortableShape {
   isMannequin?: boolean;
   isGarment?: boolean;
   groupId?: string;
+  zIndex?: number;
 }
 interface Stroke { 
   id: string; 
@@ -37,6 +38,7 @@ interface Stroke {
   fillOpacity?: number;
   groupId?: string;
   closed?: boolean;
+  zIndex?: number;
 }
 type HistoryItem = { shapes: DistortableShape[]; strokes: Stroke[] };
 type Candidate = { id: string; d: string; area: number; selected: boolean; };
@@ -1145,120 +1147,25 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   const copyFromSelection = useCallback(async () => {
     if (!selectionRect) return;
-    
     try {
-      const rectX = Math.min(selectionRect.x1, selectionRect.x2);
-      const rectY = Math.min(selectionRect.y1, selectionRect.y2);
-      const rectW = Math.abs(selectionRect.x2 - selectionRect.x1);
-      const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
-      
-      if (rectW < 5 || rectH < 5) return;
-      
-      // Create a canvas to composite all items in the selection
-      const canvas = document.createElement('canvas');
-      const scale = 2;
-      canvas.width = rectW * scale;
-      canvas.height = rectH * scale;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      
-      ctx.scale(scale, scale);
-      
-      // Load all images first
-      const shapesToDraw = workspaceShapes.filter(shape => {
+      // Copy actual vector shapes and strokes in selection
+      const shapesToCopy = workspaceShapes.filter(shape => {
         const bbox = getBoundingBox(shape);
         return isItemInRect(bbox, selectionRect);
       });
-      
-      const imagePromises = shapesToDraw.map(shape => {
-        return new Promise<{ shape: DistortableShape; img: HTMLImageElement } | null>((resolve) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => resolve({ shape, img });
-          img.onerror = () => resolve(null);
-          img.src = shape.img;
-        });
-      });
-      
-      const loadedImages = await Promise.all(imagePromises);
-      
-      // Draw all loaded shapes
-      loadedImages.forEach(item => {
-        if (!item) return;
-        const { shape, img } = item;
-        
-        ctx.save();
-        ctx.translate(shape.position.x - rectX, shape.position.y - rectY);
-        ctx.scale(shape.scale, shape.scale);
-        
-        // Create clipping path
-        ctx.beginPath();
-        shape.dots.forEach((dot, i) => {
-          if (i === 0) ctx.moveTo(dot.x, dot.y);
-          else ctx.lineTo(dot.x, dot.y);
-        });
-        ctx.closePath();
-        ctx.clip();
-        
-        // Draw image
-        ctx.drawImage(img, 0, 0, shape.dims.width, shape.dims.height);
-        ctx.restore();
-      });
-      
-      // Draw all strokes that intersect with selection
-      strokes.forEach(stroke => {
+      const strokesToCopy = strokes.filter(stroke => {
         const bbox = getBoundingBox(stroke);
-        if (isItemInRect(bbox, selectionRect)) {
-          ctx.save();
-          ctx.translate(-rectX, -rectY);
-          ctx.strokeStyle = stroke.color;
-          ctx.lineWidth = stroke.width;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          
-          ctx.beginPath();
-          stroke.points.forEach((p, i) => {
-            if (i === 0) ctx.moveTo(p.x, p.y);
-            else ctx.lineTo(p.x, p.y);
-          });
-          ctx.stroke();
-          
-          if (stroke.fillColor) {
-            ctx.fillStyle = stroke.fillColor;
-            ctx.fill();
-          }
-          ctx.restore();
-        }
+        return isItemInRect(bbox, selectionRect);
       });
-      
-      const croppedDataUrl = canvas.toDataURL('image/png');
-      
-      // Store in clipboard
-      const clipboardData = {
-        shapes: [{
-          id: 'clipboard-temp',
-          img: croppedDataUrl,
-          dots: [
-            { id: 'd1', x: 0, y: 0 },
-            { id: 'd2', x: rectW, y: 0 },
-            { id: 'd3', x: rectW, y: rectH },
-            { id: 'd4', x: 0, y: rectH }
-          ],
-          dims: { width: rectW, height: rectH },
-          position: { x: rectX, y: rectY },
-          scale: 1,
-          showDots: true,
-          erasedPaths: []
-        }],
-        strokes: []
-      };
-      setClipboard(clipboardData);
-      console.log('Copied to clipboard successfully');
-      
+      if (shapesToCopy.length === 0 && strokesToCopy.length === 0) return;
+      // Deep clone to avoid reference issues
+      const shapesCopy = JSON.parse(JSON.stringify(shapesToCopy));
+      const strokesCopy = JSON.parse(JSON.stringify(strokesToCopy));
+      setClipboard({ shapes: shapesCopy, strokes: strokesCopy });
+      console.log('Copied vector shapes and strokes to clipboard');
     } catch (error) {
       console.error('Copy failed:', error);
     }
-    
     setSelectionRect(null);
     setContextMenu(null);
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
@@ -1272,90 +1179,75 @@ export function Studio({ onBack }: { onBack: () => void }) {
       const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
       if (rectW < 5 || rectH < 5) return;
 
-      const canvas = document.createElement('canvas');
-      const scale = 1;
-      canvas.width = Math.round(rectW * scale);
-      canvas.height = Math.round(rectH * scale);
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-      ctx.scale(scale, scale);
+      const svgEl = workspaceRef.current;
+      if (!svgEl) return;
 
-      // Draw shapes inside selection
-      const shapesToDraw = workspaceShapes.filter(shape => {
-        const bbox = getBoundingBox(shape);
-        return isItemInRect(bbox, selectionRect);
-      });
+      const clone = svgEl.cloneNode(true) as SVGSVGElement;
+      clone.querySelectorAll('circle[data-control-dot]').forEach(d => d.remove());
+      clone.querySelectorAll('rect[stroke="#3b82f6"]').forEach(d => d.remove());
+      
+      clone.setAttribute('viewBox', `${rectX} ${rectY} ${rectW} ${rectH}`);
+      clone.setAttribute('width', `${rectW}`);
+      clone.setAttribute('height', `${rectH}`);
 
-      const imagePromises = shapesToDraw.map(shape => {
-        return new Promise<{ shape: DistortableShape; img: HTMLImageElement } | null>((resolve) => {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => resolve({ shape, img });
-          img.onerror = () => resolve(null);
-          img.src = shape.img;
-        });
-      });
-
-      const loadedImages = await Promise.all(imagePromises);
-
-      loadedImages.forEach(item => {
-        if (!item) return;
-        const { shape, img } = item;
-        ctx.save();
-        ctx.translate(shape.position.x - rectX, shape.position.y - rectY);
-        ctx.scale(shape.scale, shape.scale);
-
-        // Clip to polygon
-        ctx.beginPath();
-        shape.dots.forEach((dot, i) => {
-          if (i === 0) ctx.moveTo(dot.x, dot.y);
-          else ctx.lineTo(dot.x, dot.y);
-        });
-        ctx.closePath();
-        ctx.clip();
-
-        ctx.drawImage(img, 0, 0, shape.dims.width, shape.dims.height);
-        ctx.restore();
-      });
-
-      // Draw strokes inside selection
-      strokes.forEach(stroke => {
-        const bbox = getBoundingBox(stroke);
-        if (isItemInRect(bbox, selectionRect)) {
-          ctx.save();
-          ctx.translate(-rectX, -rectY);
-          ctx.strokeStyle = stroke.color;
-          ctx.lineWidth = stroke.width;
-          ctx.lineCap = 'round';
-          ctx.lineJoin = 'round';
-          ctx.beginPath();
-          stroke.points.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
-          ctx.stroke();
-          if (stroke.fillColor) { ctx.fillStyle = stroke.fillColor; ctx.fill(); }
-          ctx.restore();
+      const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
+      for (const imgEl of images) {
+        const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+        if (!href) continue;
+        try {
+          if (href.startsWith('data:')) continue;
+          const res = await fetch(href, { mode: 'cors' });
+          const blob = await res.blob();
+          const reader = new FileReader();
+          const dataUrl: string = await new Promise((resolve, reject) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+          imgEl.setAttribute('href', dataUrl);
+        } catch (e) {
+          console.warn('[extractSelection] failed to inline', href, e);
         }
-      });
+      }
 
-      const mime = asJpeg ? 'image/jpeg' : 'image/png';
-      const dataUrl = canvas.toDataURL(mime);
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `selection-extract-${Date.now()}.${asJpeg ? 'jpg' : 'png'}`;
-      a.click();
+      try { clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg'); clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink'); } catch (e: any) {}
+      const serializer = new XMLSerializer();
+      let source = serializer.serializeToString(clone);
+      if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
+
+      const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = rectW;
+        canvas.height = rectH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { URL.revokeObjectURL(url); return; }
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        const mime = asJpeg ? 'image/jpeg' : 'image/png';
+        const dataUrl = canvas.toDataURL(mime);
+        const link = document.createElement('a');
+        link.download = `selection-extract-${Date.now()}.${asJpeg ? 'jpg' : 'png'}`;
+        link.href = dataUrl;
+        link.click();
+      };
+      img.src = url;
     } catch (err) {
       console.error('extractSelection failed', err);
       alert('Extraction failed. Try uploading images (CORS) or check console.');
     }
     setSelectionRect(null);
     setContextMenu(null);
-  }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
+  }, [selectionRect]);
 
   const pasteFromSelection = useCallback(() => {
     if (!clipboard || (!clipboard.shapes.length && !clipboard.strokes.length)) return;
     saveForUndo();
-    
     const PASTE_OFFSET = 30;
-    
     // Get paste position from last selection or center
     let pasteX = 100;
     let pasteY = 100;
@@ -1363,33 +1255,44 @@ export function Studio({ onBack }: { onBack: () => void }) {
       pasteX = Math.min(selectionRect.x1, selectionRect.x2);
       pasteY = Math.min(selectionRect.y1, selectionRect.y2);
     }
-    
-    // Paste shapes with new IDs and position at paste location
+    // Paste shapes and strokes with new IDs and offset position
     const newShapes = clipboard.shapes.map(shape => ({
       ...shape,
       id: `s-${Date.now()}-${Math.random()}`,
-      position: { x: pasteX, y: pasteY },
+      position: { x: (shape.position?.x ?? 0) + PASTE_OFFSET, y: (shape.position?.y ?? 0) + PASTE_OFFSET },
       groupId: undefined // Remove group when pasting
     }));
-    
+    const newStrokes = clipboard.strokes.map(stroke => ({
+      ...stroke,
+      id: `st-${Date.now()}-${Math.random()}`,
+      points: stroke.points.map(p => ({ ...p, x: p.x + PASTE_OFFSET, y: p.y + PASTE_OFFSET })),
+      groupId: undefined
+    }));
     setWorkspaceShapes(prev => [...prev, ...newShapes]);
+    setStrokes(prev => [...prev, ...newStrokes]);
     setSelectionRect(null);
     setContextMenu(null);
   }, [clipboard, saveForUndo, selectionRect]);
 
   const bringToFront = (id: string, type: "shape" | "stroke") => {
     saveForUndo();
+    const maxZ = Math.max(
+      ...workspaceShapes.map(s => s.zIndex || 0),
+      ...strokes.map(s => s.zIndex || 0),
+      0
+    );
+    
     if (type === "shape") {
       setWorkspaceShapes((prev) => {
         const item = prev.find((s) => s.id === id);
         if (!item) return prev;
-        return [...prev.filter((s) => s.id !== id), item];
+        return [...prev.filter((s) => s.id !== id), { ...item, zIndex: maxZ + 1 }];
       });
     } else {
       setStrokes((prev) => {
         const item = prev.find((s) => s.id === id);
         if (!item) return prev;
-        return [...prev.filter((s) => s.id !== id), item];
+        return [...prev.filter((s) => s.id !== id), { ...item, zIndex: maxZ + 1 }];
       });
     }
     setContextMenu(null);
@@ -1397,17 +1300,23 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   const sendToBack = (id: string, type: "shape" | "stroke") => {
     saveForUndo();
+    const minZ = Math.min(
+      ...workspaceShapes.map(s => s.zIndex || 0),
+      ...strokes.map(s => s.zIndex || 0),
+      0
+    );
+    
     if (type === "shape") {
       setWorkspaceShapes((prev) => {
         const item = prev.find((s) => s.id === id);
         if (!item) return prev;
-        return [item, ...prev.filter((s) => s.id !== id)];
+        return [{ ...item, zIndex: minZ - 1 }, ...prev.filter((s) => s.id !== id)];
       });
     } else {
       setStrokes((prev) => {
         const item = prev.find((s) => s.id === id);
         if (!item) return prev;
-        return [item, ...prev.filter((s) => s.id !== id)];
+        return [{ ...item, zIndex: minZ - 1 }, ...prev.filter((s) => s.id !== id)];
       });
     }
     setContextMenu(null);
@@ -1659,11 +1568,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
     downloadImage(type);
   };
 
-  function pasteFromClipboard() {
-    // TODO: Implement clipboard paste logic
-    console.log('Paste from clipboard triggered');
-  }
-
   if (!mounted) return null;
 
   return (
@@ -1845,16 +1749,35 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   <button onClick={() => extractSelection(false)} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
                     ✂️ Extract Image
                   </button>
-                  {clipboard && clipboard.shapes.length > 0 && (
-                    <button onClick={pasteFromClipboard} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase text-green-600">
+                  {clipboard && (clipboard.shapes.length > 0 || clipboard.strokes.length > 0) && (
+                    <button onClick={pasteFromSelection} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase text-green-600">
                       📌 Paste
                     </button>
                   )}
                 </>
               ) : (
                 <>
-                  <button onClick={() => bringToFront(contextMenu.id, contextMenu.type as "shape" | "stroke")} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Bring to Front</button>
-                  <button onClick={() => sendToBack(contextMenu.id, contextMenu.type as "shape" | "stroke")} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100">Send to Back</button>
+                  <button
+                    onClick={() => {
+                      if (contextMenu.type !== "selection") bringToFront(contextMenu.id, contextMenu.type as "shape" | "stroke");
+                    }}
+                    className={`w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 ${contextMenu.type === "selection" ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}
+                    disabled={contextMenu.type === "selection"}
+                  >
+                    Bring to Front
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (contextMenu.type !== "selection") sendToBack(contextMenu.id, contextMenu.type as "shape" | "stroke");
+                    }}
+                    className={`w-full text-left px-4 py-2 text-[9px] font-black uppercase border-b border-slate-100 ${contextMenu.type === "selection" ? "text-slate-300 cursor-not-allowed" : "hover:bg-slate-50"}`}
+                    disabled={contextMenu.type === "selection"}
+                  >
+                    Send to Back
+                  </button>
+                  {contextMenu.type === "selection" && (
+                    <div className="w-full text-left px-4 py-2 text-[9px] text-slate-400 font-bold uppercase border-b border-slate-100">Select a shape or pen stroke to use these options</div>
+                  )}
                   {contextMenu.type === "shape" && !workspaceShapes.find(s => s.id === contextMenu.id)?.isMannequin && (
                     <button id="drape-menu-btn" onClick={() => openDrapeModal(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-purple-50 text-[9px] font-black uppercase border-b border-slate-100 text-purple-600">
                       🎀 Drape to Mannequin
@@ -1980,7 +1903,13 @@ export function Studio({ onBack }: { onBack: () => void }) {
             }
             
             if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
-            if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4 }]);
+            if (activeTool === "pen") { saveForUndo(); const sid = `st-${Date.now()}`; 
+              const maxZ = Math.max(
+                ...workspaceShapes.map(s => s.zIndex || 0),
+                ...strokes.map(s => s.zIndex || 0),
+                0
+              );
+              setStrokes(prev => [...prev, { id: sid, points: [{ id: `pt-${Date.now()}`, x: c.x, y: c.y }], color: activeColor, width: 4, zIndex: maxZ + 1 }]);
               penRef.current = { pointerId: e.pointerId, lastX: c.x, lastY: c.y, strokeId: sid };
               e.currentTarget.setPointerCapture(e.pointerId);
               return;
@@ -2208,84 +2137,89 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     style={{ cursor: 'context-menu' }}
                   />
                 )}
-                {workspaceShapes.map((shape, shapeIdx) => {
-                  const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
-                  return (
-                    <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
-                      {shape.isMannequin ? (
-                        <>
-                          <defs>
-                            <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
-                          </defs>
-                          <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
-                            if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
-                            if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                          }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
-                          {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
-                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                          {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                        </>
-                      ) : (
-                        <>
-                          <defs>
-                            <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
-                            {shape.erasedPaths && shape.erasedPaths.length > 0 && (
-                              <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}>
-                                <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
-                                {shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}
-                              </mask>
-                            )}
-                          </defs>
-                          <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
-                            if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
-                            if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s)); return; }
-                            if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                          }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
-                          {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
-                          {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ? (
+                {/* Render shapes and strokes together sorted by zIndex */}
+                {[...workspaceShapes.map(s => ({ ...s, type: 'shape' as const })), ...strokes.map(s => ({ ...s, type: 'stroke' as const }))]
+                  .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
+                  .map((item, idx) => {
+                    if (item.type === 'shape') {
+                      const shape = item as DistortableShape;
+                      const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
+                      return (
+                        <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
+                          {shape.isMannequin ? (
                             <>
                               <defs>
-                                {getFabricImagePath(shape.clothType) ? (
-                                  <filter id={`colorize-${shape.id}`}>
-                                    <feColorMatrix type="matrix" values="
-                                      0.33 0.33 0.33 0 0
-                                      0.33 0.33 0.33 0 0
-                                      0.33 0.33 0.33 0 0
-                                      0    0    0    1 0" result="gray" />
-                                    <feFlood floodColor={shape.fillColor} result="color" />
-                                    <feBlend mode="multiply" in="color" in2="gray" />
-                                  </filter>
-                                ) : null}
-                                <pattern id={`pt-${shape.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(shape.clothType) ? 150 : 40} height={getFabricImagePath(shape.clothType) ? 150 : 40}>
-                                  {getFabricImagePath(shape.clothType) ? (
-                                    <image href={getFabricImagePath(shape.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-${shape.id})`} />
-                                  ) : (
-                                    <image href={generateTextureDataUrl(shape.fillColor, normalizeFabric(shape.clothType), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
-                                  )}
-                                </pattern>
+                                <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
                               </defs>
-                              <path d={generatePathData(shape.dots, true)} fill={`url(#pt-${shape.id})`} pointerEvents="none" />
+                              <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
+                                if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
+                                if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
+                              }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                              {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
+                              {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
+                              {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                             </>
                           ) : (
-                            shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
+                            <>
+                              <defs>
+                                <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
+                                {shape.erasedPaths && shape.erasedPaths.length > 0 && (
+                                  <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}>
+                                    <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
+                                    {shape.erasedPaths.map((p, i) => <path key={`er-${i}`} d={p} fill="black" />)}
+                                  </mask>
+                                )}
+                              </defs>
+                              <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
+                                if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
+                                if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s)); return; }
+                                if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
+                              }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                              {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
+                              {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ? (
+                                <>
+                                  <defs>
+                                    {getFabricImagePath(shape.clothType) ? (
+                                      <filter id={`colorize-${shape.id}`}>
+                                        <feColorMatrix type="matrix" values="
+                                          0.33 0.33 0.33 0 0
+                                          0.33 0.33 0.33 0 0
+                                          0.33 0.33 0.33 0 0
+                                          0    0    0    1 0" result="gray" />
+                                        <feFlood floodColor={shape.fillColor} result="color" />
+                                        <feBlend mode="multiply" in="color" in2="gray" />
+                                      </filter>
+                                    ) : null}
+                                    <pattern id={`pt-${shape.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(shape.clothType) ? 150 : 40} height={getFabricImagePath(shape.clothType) ? 150 : 40}>
+                                      {getFabricImagePath(shape.clothType) ? (
+                                        <image href={getFabricImagePath(shape.clothType)!} x="0" y="0" width={150} height={150} preserveAspectRatio="xMidYMid slice" filter={`url(#colorize-${shape.id})`} />
+                                      ) : (
+                                        <image href={generateTextureDataUrl(shape.fillColor, normalizeFabric(shape.clothType), 64)} x="0" y="0" width={40} height={40} preserveAspectRatio="none" />
+                                      )}
+                                    </pattern>
+                                  </defs>
+                                  <path d={generatePathData(shape.dots, true)} fill={`url(#pt-${shape.id})`} pointerEvents="none" />
+                                </>
+                              ) : (
+                                shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
+                              )}
+                              {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
+                              {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={idx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
+                              {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
+                              {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
+                            </>
                           )}
-                          {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />}
-                          {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={shapeIdx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
-                          {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                          {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
-                        </>
-                      )}
-                    </g>
-                  );
-                })}
-                {strokes.map(s => {
-                  const allX = s.points.map(p => p.x);
-                  const allY = s.points.map(p => p.y);
-                  const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
-                  const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
-                  const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
-                  return (
-                  <g key={s.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                        </g>
+                      );
+                    } else {
+                      const s = item as Stroke;
+                      const allX = s.points.map(p => p.x);
+                      const allY = s.points.map(p => p.y);
+                      const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
+                      const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                      const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
+                      return (
+                      <g key={s.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                     {s.baseFill && <path d={generatePathData(s.points, s.closed ?? false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
                     {s.fillColor && s.clothType && s.clothType !== 'solid' ? (
                       <>
@@ -2334,7 +2268,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     })()}
                   </g>
                   );
-                })}
+                }
+              })}
               </svg>
             </div>
             {/* templates moved below main to keep them separate from the workspace */}
