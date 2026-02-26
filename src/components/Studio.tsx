@@ -1741,13 +1741,29 @@ export function Studio({ onBack }: { onBack: () => void }) {
               }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-blue-900 text-amber-300 py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-30">Add to Canvas</button>
             </div>
           </div>
-          <div className="flex-1 p-4 overflow-hidden">
-            <div className="h-full bg-gradient-to-br from-amber-100 to-orange-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-amber-200 shadow-inner">
+          <div className="flex-1 p-4 overflow-hidden flex flex-col gap-4">
+            <div className="flex-1 bg-gradient-to-br from-amber-100 to-orange-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-amber-200 shadow-inner">
               <svg id="trace-svg-container" viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} className="w-full h-full p-4">
                 {selectedImage && <image href={selectedImage} width={imgDims.width} height={imgDims.height} />}
                 {candidates.map((c, idx) => (<path key={c.id} id={idx === 0 ? "path-0-0" : c.id} d={c.d} fill={c.selected ? "rgba(251, 146, 60, 0.5)" : "transparent"} stroke={c.selected ? "#f97316" : "#cbd5e1"} strokeWidth={4} className="cursor-pointer" onClick={() => setCandidates(prev => prev.map(x => x.id === c.id ? {...x, selected: !x.selected} : x))} />))}
                 {sourceDots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={8} fill="#f97316" stroke="#ffffff" strokeWidth={3} opacity={0.9} />))}
               </svg>
+            </div>
+            
+            {/* Templates moved under source */}
+            <div className="shrink-0">
+              <h4 className="text-[10px] font-black uppercase text-slate-500 mb-2">Templates</h4>
+              <div className="flex items-center gap-2 overflow-x-auto pb-2">
+                {templates.map((u, i) => (
+                  <img
+                    key={i}
+                    id={`template-${i}`}
+                    src={u}
+                    onClick={() => setSelectedImage(u)}
+                    className={`h-12 w-12 shrink-0 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-amber-500 scale-105' : 'border-transparent opacity-70 hover:opacity-100'}`}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </aside>
@@ -1913,7 +1929,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               )}
             </div>
           </div>
-          <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] p-2 lg:p-8" onPointerDown={(e) => { 
+          <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] pb-[100px] md:pb-[120px] p-2 lg:p-8" onPointerDown={(e) => { 
             // REST OF EXISTING LOGIC
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
@@ -2293,28 +2309,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
               })}
               </svg>
             </div>
-            {/* templates moved below main to keep them separate from the workspace */}
-            <div className="lg:hidden absolute bottom-20 right-2 bg-white rounded-full border-2 border-amber-300 shadow-xl px-3 py-2 animate-pulse">
-              <div className="flex items-center gap-1">
-                <span className="text-[9px] font-black text-amber-600">Click ? for tutorial</span>
-              </div>
-              <div className="absolute bottom-0 right-6 w-0 h-0 border-l-6 border-r-6 border-t-6 border-transparent border-t-white" style={{transform: 'translateY(100%)'}}></div>
-            </div>
             <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
           </main>
-
-          {/* Templates bar - separate from workspace */}
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] lg:w-auto flex items-center gap-3 p-3 bg-white/60 backdrop-blur-xl rounded-[2rem] shadow-xl z-50 overflow-x-auto">
-            {templates.map((u, i) => (
-              <img
-                key={i}
-                id={`template-${i}`}
-                src={u}
-                onClick={() => setSelectedImage(u)}
-                className={`h-12 w-12 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-slate-900 scale-105' : 'border-transparent opacity-50'}`}
-              />
-            ))}
-          </div>
         </div>
         <AdBanner />
       </div>
