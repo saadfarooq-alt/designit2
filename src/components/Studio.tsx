@@ -2100,7 +2100,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               } }} onPointerUp={(e) => { 
               // Show context menu for selection rectangle only on right-click
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
-                if (((e.nativeEvent) as PointerEvent).button === 2) {
+                if (((e.nativeEvent) as PointerEvent).button === 2 || e.pointerType === 'touch') {
                   setContextMenu({ x: e.clientX, y: e.clientY, id: 'selection', type: 'selection' });
                 }
               } else {
@@ -2109,8 +2109,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
               
               <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
+                e.preventDefault();
                 if (selectionRect) {
-                  e.preventDefault();
                   e.stopPropagation();
                   const rect = { x: Math.min(selectionRect.x1, selectionRect.x2), y: Math.min(selectionRect.y1, selectionRect.y2), width: Math.abs(selectionRect.x2 - selectionRect.x1), height: Math.abs(selectionRect.y2 - selectionRect.y1) };
                   const c = getCoords(e);
@@ -2149,7 +2149,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
                                 if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                              }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                              }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                               {globalShowDots && shape.dots.map((dot) => (<circle key={dot.id} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#8b5cf6" stroke="#ffffff" strokeWidth={2 / shape.scale} opacity={0.8} onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                               {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                               {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
@@ -2169,7 +2169,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                 if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                                 if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s)); return; }
                                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
-                              }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                              }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                               {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
                               {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ? (
                                 <>
@@ -2238,10 +2238,10 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             )}
                           </pattern>
                         </defs>
-                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
+                            <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={`url(#pt-stroke-${s.id})`} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                       </>
                     ) : (
-                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} />
+                      <path d={generatePathData(s.points, s.closed ?? false)} stroke={globalShowDots ? s.color : "transparent"} strokeWidth={s.width} fill={s.fillColor || "transparent"} strokeLinecap="round" strokeLinejoin="round" onPointerDown={(e) => { if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); } else if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingStrokeId(s.id); setDragOffset({ x: c.x, y: c.y }); } }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} />
                     )}
                     {globalShowDots && s.points.map((p) => (
                       <circle key={p.id} cx={p.x} cy={p.y} r={8} fill={s.color} onPointerDown={(e) => { if (activeTool === "cursor") { e.stopPropagation(); setDraggingStrokeDot({ strokeId: s.id, dotId: p.id }); } }} />
