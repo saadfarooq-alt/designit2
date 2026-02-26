@@ -434,6 +434,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "fill" | "erase">("cursor");
+  const [workspaceBgColor, setWorkspaceBgColor] = useState<string>('amber');
   const [activeColor, setActiveColor] = useState("#27EEF5");
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [keepOriginalColor, setKeepOriginalColor] = useState<boolean>(false);
@@ -1433,6 +1434,18 @@ export function Studio({ onBack }: { onBack: () => void }) {
     }
   };
 
+  const getWorkspaceBgClasses = () => {
+    const bgMap: Record<string, string> = {
+      white: 'bg-white border-slate-300',
+      amber: 'bg-gradient-to-br from-amber-100 to-orange-100 border-amber-200',
+      slate: 'bg-gradient-to-br from-slate-200 to-slate-300 border-slate-400',
+      gray: 'bg-gradient-to-br from-gray-100 to-gray-200 border-gray-300',
+      blue: 'bg-gradient-to-br from-blue-100 to-cyan-100 border-blue-200'
+    };
+    return bgMap[workspaceBgColor] || bgMap['amber'];
+  };
+
+
   const handleRemoveBackground = async () => {
     if (!selectedImage) return;
     
@@ -2030,7 +2043,16 @@ export function Studio({ onBack }: { onBack: () => void }) {
               )}
             </div>
           </div>
-          <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] pb-[100px] md:pb-[120px] p-2 lg:p-8" onPointerDown={(e) => { 
+          {/* Workspace background color selector */}
+          <div className="shrink-0 p-4 pb-2 flex gap-2 items-center bg-white border-b border-slate-200 shadow-sm z-10 sticky top-0">
+            <span className="text-[9px] font-black uppercase text-slate-600">Canvas BG:</span>
+            <button onClick={() => setWorkspaceBgColor('white')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'white' ? 'ring-2 ring-blue-500 bg-white text-slate-900' : 'bg-white border border-slate-300 text-slate-600 hover:border-slate-400'}`}>White</button>
+            <button onClick={() => setWorkspaceBgColor('amber')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'amber' ? 'ring-2 ring-blue-500 bg-amber-200 text-slate-900' : 'bg-amber-100 border border-amber-300 text-slate-600 hover:border-amber-400'}`}>Amber</button>
+            <button onClick={() => setWorkspaceBgColor('slate')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'slate' ? 'ring-2 ring-blue-500 bg-slate-300 text-white' : 'bg-slate-200 border border-slate-400 text-slate-600 hover:border-slate-500'}`}>Slate</button>
+            <button onClick={() => setWorkspaceBgColor('gray')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'gray' ? 'ring-2 ring-blue-500 bg-gray-200 text-slate-900' : 'bg-gray-100 border border-gray-300 text-slate-600 hover:border-gray-400'}`}>Gray</button>
+            <button onClick={() => setWorkspaceBgColor('blue')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'blue' ? 'ring-2 ring-blue-500 bg-blue-200 text-slate-900' : 'bg-blue-100 border border-blue-300 text-slate-600 hover:border-blue-400'}`}>Blue</button>
+          </div>
+          <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] pb-[100px] md:pb-[120px] p-2 lg:p-8 overflow-auto" onPointerDown={(e) => {  
             // REST OF EXISTING LOGIC
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
@@ -2251,7 +2273,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
               }
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
               
-              <svg id="workspace-svg" ref={workspaceRef} className="w-full h-full bg-white shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl" onContextMenu={(e) => {
+              <svg id="workspace-svg" ref={workspaceRef} className={`w-full h-full shadow-2xl rounded-[3rem] lg:rounded-[3rem] rounded-2xl ${getWorkspaceBgClasses()}`} onContextMenu={(e) => {
                 e.preventDefault();
                 if (selectionRect) {
                   e.stopPropagation();
