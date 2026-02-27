@@ -288,6 +288,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const getFabricImagePath = (fabricName: string) => {
     const normalized = normalizeFabric(fabricName);
     
+    if (normalized === 'voile') return '/swatches/voile.avif';
+
     // Check if we have a specific JPG for this fabric
     const jpgFabrics = [
       'acetate', 'batik', 'boucle', 'brocade', 'buckram', 'calico', 'cambric', 'canvas', 'cashmere',
@@ -2372,7 +2374,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                           0.33 0.33 0.33 0 0
                                           0    0    0    1 0" result="gray" />
                                         <feFlood floodColor={shape.fillColor} result="color" />
-                                        <feBlend mode="multiply" in="color" in2="gray" />
+                                        <feBlend mode="hard-light" in="color" in2="gray" />
                                       </filter>
                                     ) : null}
                                     <pattern id={`pt-${shape.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(shape.clothType) ? 150 : 40} height={getFabricImagePath(shape.clothType) ? 150 : 40}>
@@ -2417,7 +2419,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                 0.33 0.33 0.33 0 0
                                 0    0    0    1 0" result="gray" />
                               <feFlood floodColor={s.fillColor} result="color" />
-                              <feBlend mode="multiply" in="color" in2="gray" />
+                              <feBlend mode="hard-light" in="color" in2="gray" />
                             </filter>
                           ) : null}
                           <pattern id={`pt-stroke-${s.id}`} patternUnits="userSpaceOnUse" width={getFabricImagePath(s.clothType) ? 150 : 40} height={getFabricImagePath(s.clothType) ? 150 : 40}>
