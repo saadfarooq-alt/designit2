@@ -473,8 +473,20 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [clipboard, setClipboard] = useState<{ shapes: DistortableShape[]; strokes: Stroke[] } | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    fetch('/api/assets')
+      .then(res => res.json())
+      .then(data => {
+        if (data.assets) {
+          setCustomAssets(data.assets);
+        }
+      })
+      .catch(err => console.error('Failed to load assets', err));
+  }, []);
   const workspaceShapesRef = useRef<DistortableShape[]>([]);
   const isPointerDownRef = useRef(false);
   const penRef = useRef<{ pointerId: number; lastX: number; lastY: number; strokeId: string } | null>(null);
@@ -731,17 +743,83 @@ export function Studio({ onBack }: { onBack: () => void }) {
     ];
   };
 
-  const addShapeToCanvas = useCallback((type: 'square' | 'circle' | 'triangle' | 'star' | 'heart' | 'line' | 'curve' | 'oval' | 'emerald' | 'pear' | 'marquise' | 'bead' | 'button' | 'real-emerald' | 'real-bead') => {
+  const addShapeToCanvas = useCallback((type: 'square' | 'circle' | 'triangle' | 'star' | 'heart' | 'line' | 'curve' | 'oval' | 'emerald' | 'pear' | 'marquise' | 'bead' | 'button' | 'real-emerald' | 'real-bead' | string) => {
     saveForUndo();
     const cx = 200;
     const cy = 200;
     const size = 150;
     const pts: { id: string; x: number; y: number }[] = [];
     
+    // Check if asset shape (from /api/assets)
+    if (type.startsWith('asset:')) {
+      const filename = type.split(':')[1];
+      const assetPath = `/assets/${filename}`;
+      
+      const img = new Image();
+      img.onload = () => {
+        let w = img.naturalWidth;
+        let h = img.naturalHeight;
+        
+        // Use natural dimensions if available, otherwise fallback
+        if (!w || !h) {
+           w = 200; h = 200;
+        }
+
+        const pts2: { id: string; x: number; y: number }[] = [];
+        pts2.push({ id: `pt-${Date.now()}-1`, x: cx - w/2, y: cy - h/2 });
+        pts2.push({ id: `pt-${Date.now()}-2`, x: cx + w/2, y: cy - h/2 });
+        pts2.push({ id: `pt-${Date.now()}-3`, x: cx + w/2, y: cy + h/2 });
+        pts2.push({ id: `pt-${Date.now()}-4`, x: cx - w/2, y: cy + h/2 });
+        
+        const newStroke: Stroke = {
+          id: `st-${Date.now()}`,
+          points: pts2,
+          color: 'transparent',
+          width: 0,
+          fillColor: 'transparent',
+          baseFill: undefined,
+          closed: true,
+          clothType: type, // Stores 'asset:filename.png'
+          zIndex: strokes.length + workspaceShapes.length + 1
+        };
+        setStrokes(prev => [...prev, newStroke]);
+      };
+      
+      img.onerror = () => {
+        // Fallback if load fails
+        const w = 200; 
+        const h = 200;
+        const pts2: { id: string; x: number; y: number }[] = [];
+        pts2.push({ id: `pt-${Date.now()}-1`, x: cx - w/2, y: cy - h/2 });
+        pts2.push({ id: `pt-${Date.now()}-2`, x: cx + w/2, y: cy - h/2 });
+        pts2.push({ id: `pt-${Date.now()}-3`, x: cx + w/2, y: cy + h/2 });
+        pts2.push({ id: `pt-${Date.now()}-4`, x: cx - w/2, y: cy + h/2 });
+
+        const newStroke: Stroke = {
+            id: `st-${Date.now()}`,
+            points: pts2,
+            color: 'transparent',
+            width: 0,
+            fillColor: 'transparent',
+            baseFill: undefined,
+            closed: true,
+            clothType: type,
+            zIndex: strokes.length + workspaceShapes.length + 1
+        };
+        setStrokes(prev => [...prev, newStroke]);
+      };
+
+      img.src = assetPath;
+      
+      setShowShapesModal(false);
+      return;
+    }
+
     // Check if real image shapes
     if (type === 'real-bead' || type === 'real-emerald') {
-      const w = type === 'real-bead' ? 60 : 40; // Adjust size
-      const h = type === 'real-bead' ? 60 : 60;
+      // Adjusted dimensions to match specific aspect ratios of assets
+      const w = type === 'real-bead' ? 60 : 40; 
+      const h = type === 'real-bead' ? 60 : 55; // Emerald isn't perfectly 2:3, slight adjust
       pts.push({ id: `pt-${Date.now()}-1`, x: cx - w/2, y: cy - h/2 });
       pts.push({ id: `pt-${Date.now()}-2`, x: cx + w/2, y: cy - h/2 });
       pts.push({ id: `pt-${Date.now()}-3`, x: cx + w/2, y: cy + h/2 });
@@ -2270,14 +2348,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
               <button onClick={() => setShowShapesModal(false)} className="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
             </div>
             <div className="grid grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto pr-2">
-              <button onClick={() => addShapeToCanvas('real-bead')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-10 h-10 bg-yellow-400 rounded-full shadow-lg border-2 border-yellow-200 mb-2"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Gold Bead</span>
-              </button>
-              <button onClick={() => addShapeToCanvas('real-emerald')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-8 h-10 bg-emerald-600 shadow-lg border-2 border-emerald-400 mb-2 relative" style={{ clipPath: 'polygon(20% 0, 80% 0, 100% 20%, 100% 80%, 80% 100%, 20% 100%, 0 80%, 0 20%)' }}></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Emerald Gem</span>
-              </button>
               <button onClick={() => addShapeToCanvas('square')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
                 <div className="w-12 h-12 bg-slate-200 group-hover:bg-indigo-400 transition-colors mb-2"></div>
                 <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Square</span>
@@ -2294,20 +2364,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 <div className="w-0 h-0 border-l-[24px] border-l-transparent border-r-[24px] border-r-transparent border-b-[41.6px] border-b-slate-200 group-hover:border-b-indigo-400 transition-colors mb-2"></div>
                 <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Triangle</span>
               </button>
-              <button onClick={() => addShapeToCanvas('emerald')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-8 h-10 bg-slate-200 group-hover:bg-indigo-400 transition-all mb-2 relative" style={{ clipPath: 'polygon(20% 0, 80% 0, 100% 20%, 100% 80%, 80% 100%, 20% 100%, 0 80%, 0 20%)' }}></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Emerald</span>
-              </button>
-              <button onClick={() => addShapeToCanvas('pear')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-8 h-10 bg-slate-200 group-hover:bg-indigo-400 transition-all mb-2 rounded-b-full rounded-t-full" style={{ borderRadius: '50% 50% 50% 50% / 60% 60% 40% 40%', clipPath: 'polygon(50% 0%, 100% 65%, 80% 100%, 20% 100%, 0% 65%)' }}></div> 
-                 {/* Simplify Pear visual */}
-                 <svg className="w-8 h-10 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" viewBox="0 0 24 30" fill="currentColor"><path d="M12,0 C12,0 24,14 24,20 C24,26.627 18.627,32 12,32 C5.373,32 0,26.627 0,20 C0,14 12,0 12,0 Z" transform="scale(0.8, 0.8) translate(6,0)"/></svg>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Pear</span>
-              </button>
-              <button onClick={() => addShapeToCanvas('marquise')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-8 h-12 bg-slate-200 group-hover:bg-indigo-400 transition-all mb-2 rounded-[100%]" style={{ borderRadius: '100% 0 100% 0', transform: 'rotate(-45deg) scale(0.6)' }}></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Marquise</span>
-              </button>
               <button onClick={() => addShapeToCanvas('star')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
                 <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
                 <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Star</span>
@@ -2315,17 +2371,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
               <button onClick={() => addShapeToCanvas('heart')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
                 <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                 <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Heart</span>
-              </button>
-              <button onClick={() => addShapeToCanvas('bead')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-10 h-10 bg-slate-200 group-hover:bg-indigo-400 transition-colors rounded-full mb-2 shadow-inner ring-2 ring-slate-300"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Bead</span>
-              </button>
-              <button onClick={() => addShapeToCanvas('button')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
-                <div className="w-10 h-10 bg-slate-200 group-hover:bg-indigo-400 transition-colors rounded-full mb-2 flex items-center justify-center gap-1">
-                   <div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div>
-                   <div className="w-1.5 h-1.5 bg-slate-400 rounded-full"></div>
-                </div>
-                <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Button</span>
               </button>
               <button onClick={() => addShapeToCanvas('line')} className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group">
                 <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20L20 4"/></svg>
@@ -2335,6 +2380,22 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 <svg className="w-12 h-12 text-slate-200 group-hover:text-indigo-400 transition-colors mb-2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M4 20 Q 12 4 20 20"/></svg>
                 <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600">Curve</span>
               </button>
+              {customAssets.map((asset) => (
+                <button 
+                  key={asset.name} 
+                  onClick={() => addShapeToCanvas(`asset:${asset.name}`)} 
+                  className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-indigo-50 rounded-xl border-2 border-transparent hover:border-indigo-200 transition-all group"
+                >
+                    <img 
+                      src={asset.path} 
+                      alt={asset.name}
+                      className="w-10 h-10 object-contain mb-2 drop-shadow-md"
+                    />
+                    <span className="text-[10px] font-black uppercase text-slate-600 group-hover:text-indigo-600 truncate w-full text-center">
+                      {asset.name.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ")}
+                    </span>
+                </button>
+              ))}
             </div>
             <div className="mt-8">
               <button onClick={() => setShowShapesModal(false)} className="w-full bg-slate-100 text-slate-600 py-3 rounded-xl text-[10px] font-black uppercase hover:bg-slate-200 transition-colors">Close</button>
@@ -2553,15 +2614,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-[10px] font-black uppercase text-slate-600 block mb-1">Gem Colors</label>
-                      <div className="flex gap-2 flex-wrap">
-                        <button onClick={() => setActiveColor("#046307")} className="w-6 h-6 rounded-full border border-green-300 ring-1 ring-green-500/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "radial-gradient(circle at 30% 30%, #50C878, #006400)"}} title="Emerald Green" />
-                        <button onClick={() => setActiveColor("#E0115F")} className="w-6 h-6 rounded-full border border-rose-300 ring-1 ring-rose-500/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "radial-gradient(circle at 30% 30%, #FF007F, #8B0000)"}} title="Ruby Red" />
-                        <button onClick={() => setActiveColor("#FFD700")} className="w-6 h-6 rounded-full border border-yellow-200 ring-1 ring-yellow-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "radial-gradient(circle at 30% 30%, #FFFF00, #DAA520)"}} title="Yellow Sapphire" />
-                        <button onClick={() => setActiveColor("#4AD6DE")} className="w-6 h-6 rounded-full border border-cyan-200 ring-1 ring-cyan-400/50 shadow-sm hover:scale-125 transition-all duration-300" style={{background: "radial-gradient(circle at 30% 30%, #00FFFF, #008B8B)"}} title="Blue Topaz" />
-                      </div>
-                    </div>
+                    {/* Gem Colors removed as requested */}
 
                     <div className="relative">
                       <label className="text-[10px] font-black uppercase text-slate-700">Cloth Type</label>
@@ -2626,7 +2679,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     
                     {/* Bottom: Settings & Tools */}
                     <div className="flex items-center gap-2">
-                      <label className="text-[10px] font-black uppercase text-slate-600">Size</label>
+                      <label className="text-[10px] font-black uppercase text-slate-600">Pen Size</label>
                       <input id="pen-size" type="range" min={1} max={50} value={activePenSize} onChange={e => setActivePenSize(parseInt(e.target.value, 10))} className="flex-1" />
                       <span className="text-[10px] font-bold">{activePenSize}px</span>
                     </div>
@@ -3103,10 +3156,41 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                 strokeWidth={s.width / 2} /* thinner stroke for gems, looks better */
                                 fill={`url(#gem-grad-${s.id})`} 
                                 opacity={0.9} /* slightly transp */
-                                onPointerDown={s.onPointerDown} 
-                                onContextMenu={s.onContextMenu} 
+                                onPointerDown={(e) => { 
+                                  if (activeTool === "fill") { 
+                                    e.stopPropagation(); 
+                                    saveForUndo(); 
+                                    setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
+                                  } else if (activeTool === "cursor" && !isLocked) { 
+                                    e.stopPropagation(); 
+                                    const c = getCoords(e); 
+                                    setDraggingStrokeId(s.id); 
+                                    setDragOffset({ x: c.x, y: c.y }); 
+                                  } 
+                                }}
+                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
                                 filter={`url(#gem-shine-${s.id})`}
                            />
+                        ) : s.clothType && s.clothType.startsWith('asset:') ? (
+                          <image 
+                            href={`/assets/${s.clothType.split(':')[1]}`}
+                            x={Math.min(...s.points.map(p => p.x))} 
+                            y={Math.min(...s.points.map(p => p.y))} 
+                            width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))} 
+                            height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))} 
+                            onPointerDown={(e) => { 
+                                if (activeTool === "fill") { 
+                                  // Can't replace color in images easily yet
+                                } else if (activeTool === "cursor" && !isLocked) { 
+                                  e.stopPropagation(); 
+                                  const c = getCoords(e); 
+                                  setDraggingStrokeId(s.id); 
+                                  setDragOffset({ x: c.x, y: c.y }); 
+                                } 
+                              }}
+                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
+                            // Removed preserveAspectRatio="none" to fix distortion
+                          />
                         ) : s.clothType === 'real-bead' ? (
                           <image 
                             href="/assets/bead.png" 
@@ -3114,8 +3198,19 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             y={Math.min(...s.points.map(p => p.y))} 
                             width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))} 
                             height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))} 
-                            onPointerDown={s.onPointerDown} 
-                            onContextMenu={s.onContextMenu}
+                            onPointerDown={(e) => { 
+                                if (activeTool === "fill") { 
+                                  e.stopPropagation(); 
+                                  saveForUndo(); 
+                                  setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
+                                } else if (activeTool === "cursor" && !isLocked) { 
+                                  e.stopPropagation(); 
+                                  const c = getCoords(e); 
+                                  setDraggingStrokeId(s.id); 
+                                  setDragOffset({ x: c.x, y: c.y }); 
+                                } 
+                              }}
+                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
                             preserveAspectRatio="none"
                           />
                         ) : s.clothType === 'real-emerald' ? (
@@ -3125,20 +3220,53 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             y={Math.min(...s.points.map(p => p.y))} 
                             width={Math.max(...s.points.map(p => p.x)) - Math.min(...s.points.map(p => p.x))} 
                             height={Math.max(...s.points.map(p => p.y)) - Math.min(...s.points.map(p => p.y))}
-                            onPointerDown={s.onPointerDown} 
-                            onContextMenu={s.onContextMenu}
+                            onPointerDown={(e) => { 
+                                if (activeTool === "fill") { 
+                                  e.stopPropagation(); 
+                                  saveForUndo(); 
+                                  setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
+                                } else if (activeTool === "cursor" && !isLocked) { 
+                                  e.stopPropagation(); 
+                                  const c = getCoords(e); 
+                                  setDraggingStrokeId(s.id); 
+                                  setDragOffset({ x: c.x, y: c.y }); 
+                                } 
+                              }} 
+                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
                             preserveAspectRatio="none"
                           />
                         ) : s.clothType === 'bead' || (s.type as any) === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
                            <path d={generatePathData(s.points, s.closed ?? false)} 
                                 stroke="none"
                                 fill={`url(#bead-grad-${s.id})`}
-                                onPointerDown={s.onPointerDown} 
-                                onContextMenu={s.onContextMenu} 
+                                onPointerDown={(e) => { 
+                                    if (activeTool === "fill") { 
+                                      e.stopPropagation(); 
+                                      saveForUndo(); 
+                                      setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
+                                    } else if (activeTool === "cursor" && !isLocked) { 
+                                      e.stopPropagation(); 
+                                      const c = getCoords(e); 
+                                      setDraggingStrokeId(s.id); 
+                                      setDragOffset({ x: c.x, y: c.y }); 
+                                    } 
+                                  }} 
+                                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
                                 filter={`url(#bead-shine-${s.id})`}
                            />
                         ) : s.clothType === 'button' ? (
-                          <g onPointerDown={s.onPointerDown} onContextMenu={s.onContextMenu} opacity={s.visible === false ? 0.3 : 1}>
+                          <g onPointerDown={(e) => { 
+                            if (activeTool === "fill") { 
+                              e.stopPropagation(); 
+                              saveForUndo(); 
+                              setStrokes(prev => prev.map(st => st.id === s.id ? { ...st, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : st)); 
+                            } else if (activeTool === "cursor" && !isLocked) { 
+                              e.stopPropagation(); 
+                              const c = getCoords(e); 
+                              setDraggingStrokeId(s.id); 
+                              setDragOffset({ x: c.x, y: c.y }); 
+                            } 
+                          }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }} opacity={s.visible === false ? 0.3 : 1}>
                               {/* Build button 3D look with gradient and slight shadow */}
                               <defs>
                                 <radialGradient id={`btn-grad-${s.id}`} cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
