@@ -16,7 +16,7 @@ export default function Footer() {
         </div>
         
         <div>
-          <h3 className="font-black text-lg mb-4 text-amber-400 uppercase">Quick Links</h3>
+          <h3 className="font-black text-lg mb-4 text-yellow-500 uppercase">Quick Links</h3>
           <ul className="space-y-2">
             <li><Link href="/" className="text-slate-300 hover:text-white transition-colors">Home</Link></li>
             <li><Link href="/about" className="text-slate-300 hover:text-white transition-colors">About Us</Link></li>
@@ -25,7 +25,7 @@ export default function Footer() {
         </div>
         
         <div>
-          <h3 className="font-black text-lg mb-4 text-amber-400 uppercase">Legal</h3>
+          <h3 className="font-black text-lg mb-4 text-yellow-500 uppercase">Legal</h3>
           <ul className="space-y-2">
             <li><Link href="/privacy-policy" className="text-slate-300 hover:text-white transition-colors">Privacy Policy</Link></li>
             <li><Link href="/terms-of-service" className="text-slate-300 hover:text-white transition-colors">Terms of Service</Link></li>

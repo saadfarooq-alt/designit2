@@ -55,23 +55,23 @@ export default function ContactPage() {
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 text-slate-900">
-      <nav className="flex items-center justify-between px-6 py-5 border-b-2 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 shadow-md">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 via-white to-stone-100 text-slate-900">
+      <nav className="flex items-center justify-between px-6 py-5 border-b-4 border-[#B87333] bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 shadow-md">
         <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
-          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">DesignIt ☀</span>
+          <img src="/logo.png" alt="DesignIt" className="h-8 w-auto brightness-0 invert" />
+          <span className="font-black text-2xl tracking-tight text-white drop-shadow-md">DesignIt</span>
         </div>
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
+          <Link href="/" className="text-white hover:text-yellow-100 font-semibold text-sm uppercase transition-colors drop-shadow-sm">
             Home
           </Link>
-          <Link href="/about" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
+          <Link href="/about" className="text-white hover:text-yellow-100 font-semibold text-sm uppercase transition-colors drop-shadow-sm">
             About
           </Link>
-          <Link href="/contact" className="text-amber-600 font-bold text-sm uppercase">
+          <Link href="/contact" className="text-white font-bold text-sm uppercase drop-shadow-sm border-b-2 border-white">
             Contact
           </Link>
-          <Link href="/" className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-lg hover:shadow-xl">
+          <Link href="/" className="bg-white text-yellow-700 border border-yellow-200 px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-md hover:shadow-lg hover:bg-yellow-50">
             Launch Studio
           </Link>
         </div>

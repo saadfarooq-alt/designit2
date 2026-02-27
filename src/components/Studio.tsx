@@ -2,10 +2,17 @@
 
 "use client";
 
+
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { 
+  ChevronDown, Eraser, Trash, Plus, Image as ImageIcon, Ruler, Ghost, Video, Upload, ArrowLeft, 
+  Shirt, Grid, MousePointer, PaintBucket, PenTool, Edit3, Type, Shapes, Palette, Layers, Undo2, 
+  Redo2, Save, Download, Play, Users 
+} from "lucide-react";
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
+import { SubmissionModal } from './SubmissionModal';
 
 const AdBanner = () => {
   useEffect(() => {
@@ -1621,10 +1628,182 @@ export function Studio({ onBack }: { onBack: () => void }) {
     img.onerror = (e) => {
       URL.revokeObjectURL(url);
       console.error('[downloadImage] image load error', e);
+
       alert('Failed to render SVG for export. Check console for details.');
     };
     img.src = url;
   };
+
+  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+
+  // Helper for generating shareable image
+  const getDesignImage = useCallback(async (): Promise<string | null> => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return null;
+    const svgEl = workspaceRef.current;
+    if (!svgEl) return null;
+
+    try {
+      // 1. Calculate Content Bounding Box
+      // We need to find the extent of actual content to crop the view
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      let hasContent = false;
+      const svgRect = svgEl.getBoundingClientRect();
+      const children = Array.from(svgEl.querySelectorAll('g, path, image'));
+
+      children.forEach((child) => {
+         if (child instanceof SVGGraphicsElement) {
+            // Filter out UI elements like control dots if they aren't marked
+            if (child.getAttribute('data-control-dot') || child.classList.contains('control-dot')) return;
+            if (child.tagName === 'defs') return;
+            
+            // Check if element is visible
+            const style = window.getComputedStyle(child);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
+
+            const r = child.getBoundingClientRect();
+            if (r.width === 0 || r.height === 0) return;
+            
+            // Relative to SVG
+            const x = r.left - svgRect.left;
+            const y = r.top - svgRect.top;
+            
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x + r.width > maxX) maxX = x + r.width;
+            if (y + r.height > maxY) maxY = y + r.height;
+            hasContent = true;
+         }
+      });
+      
+      // Default to full view if no content found
+      if (!hasContent) {
+         minX = 0; minY = 0; 
+         maxX = svgRect.width; maxY = svgRect.height;
+      }
+      
+      // Add padding (20px)
+      const padding = 20;
+      let viewBox = null;
+      let viewWidth = 0;
+      let viewHeight = 0;
+      
+      if (hasContent && minX !== Infinity) {
+          minX -= padding;
+          minY -= padding;
+          maxX += padding;
+          maxY += padding;
+          
+          viewWidth = maxX - minX;
+          viewHeight = maxY - minY;
+          
+          viewBox = `${minX} ${minY} ${viewWidth} ${viewHeight}`;
+          
+          console.log('[getDesignImage] Calculated bounds:', viewBox, 'Dimensions:', viewWidth, viewHeight);
+      } else {
+        console.warn('[getDesignImage] No content bounds found, defaulting to full view');
+      }
+
+      // 2. Clone SVG and prepare for rasterization
+      const clone = svgEl.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+
+      if (viewBox) {
+        clone.setAttribute('viewBox', viewBox);
+        // Explicitly set width/height attributes to match aspect ratio
+        clone.setAttribute('width', `${viewWidth}`);
+        clone.setAttribute('height', `${viewHeight}`);
+      } else {
+        // Fallback dimensions if no content detected
+        clone.setAttribute('width', '800');
+        clone.setAttribute('height', '800');
+      }
+      
+      clone.querySelectorAll('[data-control-dot]').forEach(d => d.remove());
+      // Also remove elements with class 'control-dot' which might not have the data attribute
+      clone.querySelectorAll('.control-dot').forEach(d => d.remove());
+      
+      // 2. Inline images
+      const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
+      await Promise.all(images.map(async (imgEl) => {
+        const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+        if (!href || href.startsWith('data:')) return;
+        try {
+          const res = await fetch(href, { mode: 'cors' });
+          const blob = await res.blob();
+          const reader = new FileReader();
+          const dataUrl = await new Promise<string>((resolve) => {
+            reader.onload = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+          imgEl.setAttribute('href', dataUrl);
+        } catch (e) { console.warn('Inline err', e); }
+      }));
+
+      // 3. Serialize and render to canvas
+      const serializer = new XMLSerializer();
+      let source = serializer.serializeToString(clone);
+      if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
+
+      const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      return new Promise((resolve) => {
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = 800;
+          canvas.height = 800; 
+          // Calculate scale to "COVER" the canvas if we want to fill the box completely (zoom in)
+          // or "CONTAIN" if we want to see the whole design.
+          // User asked "stretch and fit into the whole display box", which usually means
+          // "FILL" (ignore aspect ratio) or "COVER" (crop sides/top to fill)
+          // Let's use CONTAIN but with minimal padding first, as distortion is usually bad for designs.
+          // BUT - the user specifically said "stretch and fit".
+          // If they want it to fill the box in the gallery, we might just want to save the 
+          // image cropped TIGHTLY without any whitespace, and let CSS handle the "stretch/cover".
+          
+          // Re-drawing logic:
+          // 1. We cropped the SVG ViewBox to the content exactly.
+          // 2. We want the resulting output image to match the Aspect Ratio of the content.
+          // 3. Instead of a fixed 800x800 canvas, let's size the canvas to the content's aspect ratio.
+          
+          let targetW = 800;
+          let targetH = 800;
+          
+          // If we successfully calculated content bounds, use that aspect ratio
+          if (viewWidth > 0 && viewHeight > 0) {
+             const aspect = viewWidth / viewHeight;
+             if (aspect > 1) {
+                targetH = 800 / aspect;
+             } else {
+                targetW = 800 * aspect;
+             }
+          }
+          
+          canvas.width = targetW;
+          canvas.height = targetH;
+          
+          const ctx = canvas.getContext('2d');
+          if (!ctx) { resolve(null); return; }
+          
+          // REMOVED: ctx.fillStyle = '#ffffff'; ctx.fillRect(...)
+          // Keeping transparency so "just the images" are saved.
+          
+          // Draw image to fill the canvas exactly (since canvas matches aspect ratio)
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          // Use PNG to preserve transparency
+          resolve(canvas.toDataURL('image/png'));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+      });
+    } catch (err) {
+      console.error('getDesignImage error', err);
+      return null;
+    }
+  }, []);
 
   const hexToRgb = (hex: string) => {
     if (!hex) return null;
@@ -1711,7 +1890,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   if (!mounted) return null;
 
   return (
-    <div className="flex flex-col h-[100dvh] w-full bg-gradient-to-br from-amber-50 via-orange-50 to-amber-100 text-slate-900 overflow-hidden select-none touch-none" onClick={() => setContextMenu(null)}>
+    <div className="flex flex-col h-[100dvh] w-full bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900 overflow-hidden select-none touch-none" onClick={() => setContextMenu(null)}>
       {showMannequinModal && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowMannequinModal(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-lg w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -1784,51 +1963,51 @@ export function Studio({ onBack }: { onBack: () => void }) {
           </div>
         </div>
       )}
-      <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-gradient-to-r from-amber-50 to-orange-50 border-b-2 border-amber-200 shrink-0 z-[100] shadow-md">
+      <header className="h-16 flex items-center justify-between px-2 lg:px-8 bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 border-b-4 border-[#B87333] shrink-0 z-[100] shadow-md">
         <div className="flex items-center gap-2 sm:gap-4">
-          <button id="trace-btn" onClick={() => setIsSidebarOpen(true)} className="lg:hidden bg-gradient-to-r from-amber-400 to-orange-400 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all">Trace</button>
+          <button id="trace-btn" onClick={() => setIsSidebarOpen(true)} className="lg:hidden bg-gradient-to-r from-yellow-500 to-yellow-600 text-white px-3 py-2 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all">Trace</button>
           <div onClick={onBack} className="flex flex-col cursor-pointer active:scale-95 px-2">
-            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em]">DesignIt <span className="text-yellow-500">.</span></span>
-            <span className="hidden xs:block text-[7px] font-medium uppercase text-slate-400">Studio</span>
+            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-[0.2em] text-white drop-shadow-sm">DesignIt <span className="text-[#e0f2fe] drop-shadow-[0_0_2px_rgba(255,255,255,0.8)]">♦</span></span>
+            <span className="hidden xs:block text-[7px] font-medium uppercase text-yellow-100">Studio</span>
           </div>
           <div className="hidden md:flex items-center gap-4">
-            <Link href="/" className="text-slate-600 hover:text-slate-900 font-medium text-[9px] uppercase transition-colors">
+            <Link href="/" className="text-white hover:text-yellow-100 font-medium text-[9px] uppercase transition-colors drop-shadow-sm">
               Home
             </Link>
-            <Link href="/about" className="text-slate-600 hover:text-slate-900 font-medium text-[9px] uppercase transition-colors">
+            <Link href="/about" className="text-white hover:text-yellow-100 font-medium text-[9px] uppercase transition-colors drop-shadow-sm">
               About
             </Link>
-            <Link href="/contact" className="text-slate-600 hover:text-slate-900 font-medium text-[9px] uppercase transition-colors">
+            <Link href="/contact" className="text-white hover:text-yellow-100 font-medium text-[9px] uppercase transition-colors drop-shadow-sm">
               Contact
             </Link>
           </div>
         </div>
-        <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 px-4 py-2 bg-white rounded-full border-2 border-amber-300 shadow-lg animate-pulse">
-          <span className="text-[10px] font-black text-slate-900">Click</span>
-          <span className="w-5 h-5 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full flex items-center justify-center text-[10px] font-black">?</span>
-          <span className="text-[10px] font-black text-slate-900">for interactive tutorial</span>
+        <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full border-2 border-[#B87333] shadow-lg animate-pulse">
+          <span className="text-[10px] font-black text-slate-800">Click</span>
+          <span className="w-5 h-5 bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black ring-1 ring-white">?</span>
+          <span className="text-[10px] font-black text-slate-800">for interactive tutorial</span>
         </div>
           <div className="flex items-center gap-1 sm:gap-2">
           <button id="dress-form-btn" onClick={() => setShowMannequinModal(true)} className="px-2 sm:px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-full text-[8px] sm:text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all flex items-center gap-1">
             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C10.9 2 10 2.9 10 4s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 18h-3v-6h-2v6H9v-6H7v6H4v-8c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v8z"/></svg>
             <span className="hidden sm:inline">Dress Form</span>
           </button>
-          <button id="undo-btn" onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100">Undo</button>
-          <button id="reset-btn" onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100">Reset</button>
-          <button id="download-btn" onClick={() => handleDownload('png')} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100">Download</button>
+          <button id="undo-btn" onClick={undo} className="px-2 sm:px-4 py-2 bg-pink-50 text-pink-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-pink-100 hover:bg-pink-100">Undo</button>
+          <button id="reset-btn" onClick={() => { if(confirm("Reset?")) { saveForUndo(); setWorkspaceShapes([]); setStrokes([]); } }} className="px-2 sm:px-4 py-2 bg-emerald-50 text-emerald-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-emerald-100 hover:bg-emerald-100">Reset</button>
+          <button id="download-btn" onClick={() => handleDownload('png')} className="px-2 sm:px-4 py-2 bg-blue-50 text-blue-600 rounded-full text-[8px] sm:text-[9px] font-black uppercase border border-blue-100 hover:bg-blue-100">Download</button>
           <button id="dots-btn" onClick={() => setGlobalShowDots(!globalShowDots)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${globalShowDots ? 'bg-yellow-50 text-yellow-700' : 'bg-white text-slate-400'}`}>Dots</button>
           <button id="lock-btn" onClick={() => setIsLocked(!isLocked)} className={`px-2 sm:px-4 py-2 rounded-full text-[8px] sm:text-[9px] font-black uppercase border transition-all ${isLocked ? 'bg-sky-500 text-white' : 'bg-white text-sky-500'}`}>Lock</button>
         </div>
       </header>
       <div className="flex-1 flex overflow-hidden relative">
-        <aside className={`fixed lg:static inset-0 lg:w-[320px] bg-gradient-to-br from-amber-50 via-white to-orange-50 lg:border-r-2 border-amber-200 flex flex-col z-[200] lg:z-0 transition-transform shadow-lg ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
-          <div className="p-6 shrink-0 bg-gradient-to-r from-amber-50 to-orange-50 border-b-2 border-amber-200">
+        <aside className={`fixed lg:static inset-0 lg:w-[320px] bg-slate-50 lg:border-r-2 border-slate-200 flex flex-col z-[200] lg:z-0 transition-transform shadow-lg ${isSidebarOpen ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}`}>
+          <div className="p-6 shrink-0 bg-white border-b-2 border-slate-200">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xs font-black uppercase bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">Source ✨</h3>
-              <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-amber-600 hover:text-orange-600 text-xs font-bold transition-colors">CLOSE ✕</button>
+              <h3 className="text-xs font-black uppercase text-slate-800">Source <span className="text-yellow-500">✨</span></h3>
+              <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
             </div>
             <div className="grid grid-cols-2 gap-2 mb-3">
-              <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-blue-500 to-blue-600 text-white py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
+              <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-blue-500 to-blue-600 text-white py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
               <button id="add-btn" onClick={() => { 
                 // Sample the dots first
                 const ns = "http://www.w3.org/2000/svg"; 
@@ -1848,25 +2027,25 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 if (pts.length > 0) {
                   saveForUndo(); 
                   const fs = imgDims.width ? 150 / imgDims.width : 1; 
-                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...pts], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [] }]); 
+                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [...pts], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], opacity: 1 }]); 
                   setSourceDots([]); 
                   setIsSidebarOpen(false);
                 }
-              }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-blue-900 text-amber-300 py-4 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-30">Add to Canvas</button>
+              }} disabled={candidates.filter(c => c.selected).length === 0} className="bg-gradient-to-br from-slate-800 to-slate-900 text-yellow-300 py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all disabled:opacity-30">Add to Canvas</button>
             </div>
             {selectedImage && (
               <div className="mb-3">
                 <button 
                   onClick={handleRemoveBackground} 
                   disabled={isRemovingBg}
-                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-3 rounded-xl text-[9px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-2 rounded-md text-[8px] font-black uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   {isRemovingBg ? (
                     <>
-                      <span className="animate-spin">⏳</span> Removing AI Background...
+                      <span className="animate-spin">⏳</span> AI Cleaning...
                     </>
                   ) : (
-                    <>✨ AI Remove Background</>
+                    <>✨ AI Remove BG</>
                   )}
                 </button>
               </div>
@@ -1874,7 +2053,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
           </div>
           <div className="flex-1 p-4 overflow-hidden flex flex-col gap-4">
-            <div className="flex-1 bg-gradient-to-br from-amber-100 to-orange-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-amber-200 shadow-inner">
+            <div className="flex-1 bg-slate-100 rounded-3xl overflow-hidden flex items-center justify-center relative border-2 border-slate-200 shadow-inner">
               <svg 
                 id="trace-svg-container" 
                 viewBox={`0 0 ${imgDims.width} ${imgDims.height}`} 
@@ -1896,7 +2075,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                     id={`template-${i}`}
                     src={u}
                     onClick={() => setSelectedImage(u)}
-                    className={`h-12 w-12 shrink-0 rounded-xl object-cover cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-amber-500 scale-105' : 'border-transparent opacity-70 hover:opacity-100'}`}
+                    className={`h-12 w-12 shrink-0 rounded-xl object-contain cursor-pointer border-2 transition-all ${selectedImage === u ? 'border-yellow-500 scale-105 bg-white' : 'border-transparent opacity-70 hover:opacity-100 bg-white/50'}`}
                   />
                 ))}
               </div>
@@ -2071,13 +2250,24 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           </div>
           {/* Workspace background color selector */}
-          <div className="shrink-0 p-4 pb-2 flex gap-2 items-center bg-white border-b border-slate-200 shadow-sm z-10 sticky top-0">
+
+          <div className="shrink-0 p-4 pb-2 flex gap-2 items-center bg-white border-b border-slate-200 shadow-sm z-10 sticky top-0 flex-wrap">
             <span className="text-[9px] font-black uppercase text-slate-600">Canvas BG:</span>
-            <button onClick={() => setWorkspaceBgColor('white')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'white' ? 'ring-2 ring-blue-500 bg-white text-slate-900' : 'bg-white border border-slate-300 text-slate-600 hover:border-slate-400'}`}>White</button>
-            <button onClick={() => setWorkspaceBgColor('amber')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'amber' ? 'ring-2 ring-blue-500 bg-amber-200 text-slate-900' : 'bg-amber-100 border border-amber-300 text-slate-600 hover:border-amber-400'}`}>Amber</button>
-            <button onClick={() => setWorkspaceBgColor('slate')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'slate' ? 'ring-2 ring-blue-500 bg-slate-300 text-white' : 'bg-slate-200 border border-slate-400 text-slate-600 hover:border-slate-500'}`}>Slate</button>
-            <button onClick={() => setWorkspaceBgColor('gray')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'gray' ? 'ring-2 ring-blue-500 bg-gray-200 text-slate-900' : 'bg-gray-100 border border-gray-300 text-slate-600 hover:border-gray-400'}`}>Gray</button>
-            <button onClick={() => setWorkspaceBgColor('blue')} className={`px-3 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'blue' ? 'ring-2 ring-blue-500 bg-blue-200 text-slate-900' : 'bg-blue-100 border border-blue-300 text-slate-600 hover:border-blue-400'}`}>Blue</button>
+            <button onClick={() => setWorkspaceBgColor('white')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'white' ? 'ring-2 ring-blue-500 bg-white text-slate-900' : 'bg-white border border-slate-300 text-slate-600 hover:border-slate-400'}`}>White</button>
+            <button onClick={() => setWorkspaceBgColor('amber')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'amber' ? 'ring-2 ring-blue-500 bg-amber-200 text-slate-900' : 'bg-amber-100 border border-amber-300 text-slate-600 hover:border-amber-400'}`}>Amber</button>
+            <button onClick={() => setWorkspaceBgColor('slate')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'slate' ? 'ring-2 ring-blue-500 bg-slate-300 text-white' : 'bg-slate-200 border border-slate-400 text-slate-600 hover:border-slate-500'}`}>Slate</button>
+            <button onClick={() => setWorkspaceBgColor('gray')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'gray' ? 'ring-2 ring-blue-500 bg-gray-200 text-slate-900' : 'bg-gray-100 border border-gray-300 text-slate-600 hover:border-gray-400'}`}>Gray</button>
+            <button onClick={() => setWorkspaceBgColor('blue')} className={`px-2 py-1 rounded text-[8px] font-bold transition-all ${workspaceBgColor === 'blue' ? 'ring-2 ring-blue-500 bg-blue-200 text-slate-900' : 'bg-blue-100 border border-blue-300 text-slate-600 hover:border-blue-400'}`}>Blue</button>
+
+            <div className="h-4 w-px bg-slate-200 mx-1"></div>
+
+            <button
+               onClick={() => setShowSubmissionModal(true)}
+               className="flex items-center gap-1 px-3 py-1 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-md text-[9px] font-bold uppercase shadow hover:shadow-md transition-all ml-auto"
+            >
+              <Users size={10} />
+              Submit to Community
+            </button>
           </div>
           <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] pb-[100px] md:pb-[120px] p-2 lg:p-8 overflow-auto" onPointerDown={(e) => {  
             // REST OF EXISTING LOGIC
@@ -2390,7 +2580,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               ) : (
                                 shape.fillColor && <path d={generatePathData(shape.dots, true)} fill={shape.fillColor} pointerEvents="none" />
                               )}
-                              <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />
+                              {/* Removed dotted outline as requested */}
+                              {/* {globalShowDots && <path d={generatePathData(shape.dots, true)} fill="transparent" stroke="#3b82f6" strokeWidth={2 / shape.scale} strokeDasharray="4,4" opacity={0.5} pointerEvents="none" />} */}
                               {globalShowDots && shape.dots.map((dot, dotIdx) => (<circle key={dot.id} id={idx === 0 && dotIdx === 0 ? "workspace-dot-0" : undefined} cx={dot.x} cy={dot.y} r={14 / shape.scale} fill="#3b82f6" onPointerDown={(e) => { e.stopPropagation(); setDraggingDot({ shapeId: shape.id, dotId: dot.id }); }} />))}
                               {globalShowDots && <rect x={shape.dims.width - 20} y={shape.dims.height - 20} width={45/shape.scale} height={45/shape.scale} fill="#f97316" rx={4} onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setResizingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
                               {globalShowDots && <circle cx={shape.dims.width / 2} cy={-30} r={20/shape.scale} fill="#10b981" onPointerDown={(e) => { e.stopPropagation(); const c = getCoords(e); setRotatingId(shape.id); setDragOffset({ x: c.x, y: c.y }); }} />}
@@ -2461,8 +2652,14 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
             <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
           </main>
+
         </div>
         <AdBanner />
+        <SubmissionModal
+          isOpen={showSubmissionModal}
+          onClose={() => setShowSubmissionModal(false)}
+          getDesignImage={getDesignImage}
+        />
       </div>
   );
 }

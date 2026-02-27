@@ -6,20 +6,20 @@ import Footer from "../../src/components/Footer";
 
 export default function TermsOfServicePage() {
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50 text-slate-900">
-      <nav className="flex items-center justify-between px-6 py-5 border-b-2 border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 shadow-md">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900">
+      <nav className="flex items-center justify-between px-6 py-5 border-b-2 border-slate-200 bg-white shadow-md">
         <div className="flex items-center gap-2">
           <img src="/logo.png" alt="DesignIt" className="h-8 w-auto" />
-          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">DesignIt ☀</span>
+          <span className="font-black text-2xl tracking-tight bg-gradient-to-r from-yellow-600 to-yellow-400 bg-clip-text text-transparent">DesignIt</span>
         </div>
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
+          <Link href="/" className="text-slate-500 hover:text-yellow-600 font-semibold text-sm uppercase transition-colors">
             Home
           </Link>
-          <Link href="/about" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
+          <Link href="/about" className="text-slate-500 hover:text-yellow-600 font-semibold text-sm uppercase transition-colors">
             About
           </Link>
-          <Link href="/contact" className="text-slate-700 hover:text-amber-600 font-semibold text-sm uppercase transition-colors">
+          <Link href="/contact" className="text-slate-500 hover:text-yellow-600 font-semibold text-sm uppercase transition-colors">
             Contact
           </Link>
           <Link href="/" className="bg-gradient-to-r from-blue-900 to-blue-800 text-white px-8 py-3 rounded-full font-bold text-sm uppercase transition-all hover:scale-105 shadow-lg hover:shadow-xl">

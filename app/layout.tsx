@@ -1,6 +1,22 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Quicksand } from "next/font/google";
 import "./globals.css";
+
+const quicksand = Quicksand({
+  subsets: ["latin"],
+  variable: "--font-quicksand",
+  weight: ["300", "400", "500", "600", "700"],
+});
+
+const geistSans = Geist({
+  variable: "--font-geist-sans",
+  subsets: ["latin"],
+});
+
+const geistMono = Geist_Mono({
+  variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
 
 import { Analytics } from "@vercel/analytics/next";
 // app/layout.tsx
@@ -182,7 +198,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <link rel="canonical" href="https://idesignits.com/" />
       </head>
-      <body>
+      <body className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} antialiased`}>
         <Script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7392693183875834" crossOrigin="anonymous" strategy="afterInteractive" />
         {children}
         <CookieConsent />

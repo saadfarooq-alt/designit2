@@ -30,7 +30,7 @@ export default function CookieConsent() {
       <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="text-sm text-slate-300 text-center sm:text-left">
           We use cookies to personalize content and ads, to provide social media features and to analyze our traffic. We also share information about your use of our site with our social media, advertising and analytics partners. 
-          <Link href="/privacy-policy" className="text-amber-400 hover:underline ml-1">
+          <Link href="/privacy-policy" className="text-yellow-500 hover:underline ml-1">
             Learn more
           </Link>
         </div>
@@ -43,7 +43,7 @@ export default function CookieConsent() {
           </button>
           <button 
             onClick={acceptCookies}
-            className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold py-2 px-6 rounded-full text-sm transition-colors whitespace-nowrap"
+            className="bg-yellow-500 hover:bg-yellow-600 text-slate-900 font-bold py-2 px-6 rounded-full text-sm transition-colors whitespace-nowrap"
           >
             Accept All
           </button>
