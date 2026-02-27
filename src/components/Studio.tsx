@@ -3105,7 +3105,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                 </feMerge>
                               </filter>
                             </>
-                          ) : s.clothType === 'bead' || (s.type as any) === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
+                          ) : s.clothType === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
                              /* 3D Bead Shader - Sphere */
                              <>
                                <radialGradient id={`bead-grad-${s.id}`} cx="35%" cy="35%" r="60%" fx="30%" fy="30%">
@@ -3235,7 +3235,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                             onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}
                             preserveAspectRatio="none"
                           />
-                        ) : s.clothType === 'bead' || (s.type as any) === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
+                        ) : s.clothType === 'bead' || (workspaceShapes.find(ws=>ws.id===s.id)?.clothType === 'bead') ? (
                            <path d={generatePathData(s.points, s.closed ?? false)} 
                                 stroke="none"
                                 fill={`url(#bead-grad-${s.id})`}
@@ -3284,16 +3284,14 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           </g>
                         ) : (
                           /* Standard Fabric or Solid Fill */
-                          <path d={generatePathData(s.points, s.closed ?? false)} 
+                            <path d={generatePathData(s.points, s.closed ?? false)} 
                               stroke={s.visible === false ? (globalShowDots ? s.color : "transparent") : s.color} 
                               strokeWidth={s.width} 
                               fill={`url(#pt-stroke-${s.id})`} 
                               strokeLinecap="round" strokeLinejoin="round" 
                               strokeDasharray={s.visible === false ? "5,5" : undefined} 
                               opacity={s.visible === false ? 0.3 : 1} 
-                              onPointerDown={s.onPointerDown} 
-                              onContextMenu={s.onContextMenu} 
-                          />
+                            />
                         )}
                       </>
                     ) : (
