@@ -18,3 +18,47 @@ body {
   color: var(--foreground);
   font-family: var(--font-quicksand), 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
+.animate-shimmer {
+  /* Golden Metallic Look */
+  background-color: #fce7f3; /* very light pink tint as base */
+  background-image: 
+    /* The moving shine ray */
+    linear-gradient(
+      110deg,
+      transparent 20%,
+      rgba(255, 255, 255, 0.6) 40%, 
+      rgba(255, 255, 255, 0.9) 50%, 
+      rgba(255, 255, 255, 0.6) 60%, 
+      transparent 80%
+    ),
+    /* Gold Gradient Background */
+    linear-gradient(
+      to bottom,
+      #fef3c7 0%,   /* amber-100 */
+      #fcd34d 30%,  /* amber-300 */
+      #fbbf24 50%,  /* amber-400 (Middle Gold) */
+      #d97706 80%,  /* amber-600 (Deep Gold Shadow) */
+      #b45309 100%  /* amber-700 */
+    );
+  background-size: 200% 100%, 100% 100%;
+  background-blend-mode: overlay, normal;
+  animation: shine 5s linear infinite;
+}
+
+@keyframes shine {
+  0% {
+    background-position: -150% 0, 0 0;
+  }
+  100% {
+    background-position: 150% 0, 0 0;
+  }
+}
+
+/* Diamond dust sparkle class */
+.sparkle-bg {
+  background-image: radial-gradient(white 1px, transparent 1px),
+  radial-gradient(#e0f2fe 1px, transparent 1px);
+  background-size: 20px 20px, 30px 30px;
+  background-position: 0 0, 15px 15px;
+}
+

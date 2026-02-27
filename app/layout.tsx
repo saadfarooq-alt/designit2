@@ -199,7 +199,27 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="canonical" href="https://idesignits.com/" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} ${quicksand.variable} antialiased`}>
+        {/* Google AdSense */}
         <Script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-7392693183875834" crossOrigin="anonymous" strategy="afterInteractive" />
+        
+        {/* Google Ads (AdWords) Conversion Tracking */}
+        {process.env.NEXT_PUBLIC_GOOGLE_ADS_ID && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GOOGLE_ADS_ID}`}
+              strategy="afterInteractive"
+            />
+            <Script id="google-ads" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${process.env.NEXT_PUBLIC_GOOGLE_ADS_ID}');
+              `}
+            </Script>
+          </>
+        )}
+        
         {children}
         <CookieConsent />
         <Analytics />
