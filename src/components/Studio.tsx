@@ -59,6 +59,8 @@ interface DistortableShape {
   isGarment?: boolean;
   groupId?: string;
   zIndex?: number;
+  stretchFactor?: number;
+  isDrapingAnimated?: boolean;
 }
 interface Stroke { 
   id: string; 
@@ -417,6 +419,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [showMannequinModal, setShowMannequinModal] = useState(false);
   const [showShapesModal, setShowShapesModal] = useState(false);
   const [showDrapeModal, setShowDrapeModal] = useState(false);
+  const [aiDraping, setAiDraping] = useState<{active: boolean, text: string}>({ active: false, text: "" });
   const [selectedGarmentId, setSelectedGarmentId] = useState<string | null>(null);
   const [armpitMeasurement, setArmpitMeasurement] = useState(20);
   const [garmentLength, setGarmentLength] = useState(25);
@@ -575,13 +578,247 @@ export function Studio({ onBack }: { onBack: () => void }) {
     setHistory(next);
   }, [history]);
 
-  const openDrapeModal = (garmentId: string) => {
+  const openDrapeModal = async (garmentId: string) => {
     const garment = workspaceShapes.find(s => s.id === garmentId);
-    if (garment && !garment.isMannequin) {
-      setSelectedGarmentId(garmentId);
+    const mannequin = workspaceShapes.find(s => s.isMannequin);
+
+    if (garment && mannequin && !garment.isMannequin) {
       setContextMenu(null);
-      // Drape immediately without showing modal - pass garmentId directly
-      setTimeout(() => startManualShoulderSelection(garmentId), 50);
+      setAiDraping({ active: true, text: "Draping Fabric to Form..." });
+
+      try {
+        const loadImg = (src: string) => new Promise<HTMLImageElement>((res, rej) => {
+          const img = new Image();
+          if (!src.startsWith('data:')) img.crossOrigin = "anonymous";
+          img.onload = () => res(img);
+          img.onerror = (e) => {
+            console.error("Failed to load image", src.substring(0, 50));
+            rej(e);
+          };
+          img.src = src;
+        });
+
+        // Custom rasterizer to ensure vectors, points, and fills map to ImageData
+        const rasterizeShape = async (shape: DistortableShape) => {
+          const c = document.createElement('canvas');
+          c.width = shape.dims.width || 800;
+          c.height = shape.dims.height || 800;
+          const cx = c.getContext('2d', { willReadFrequently: true });
+          if (!cx) throw new Error("No Context");
+
+          cx.save();
+          // Clip path before drawing the image so it doesn't render background bounds
+          if (shape.dots && shape.dots.length > 0) {
+            cx.beginPath();
+            cx.moveTo(shape.dots[0].x, shape.dots[0].y);
+            for (let i = 1; i < shape.dots.length; i++) {
+              cx.lineTo(shape.dots[i].x, shape.dots[i].y);
+            }
+            cx.closePath();
+            cx.clip();
+          }
+
+          if (shape.img && shape.img.trim() !== '') {
+            try {
+              const img = await loadImg(shape.img);
+              cx.drawImage(img, 0, 0, shape.dims.width, shape.dims.height);
+            } catch(e) {
+              console.error("Rasterize img error:", e);
+            }
+          }
+
+          if (shape.dots && shape.dots.length > 0) {
+            if (shape.fillColor || shape.baseFill) {
+              cx.fillStyle = shape.fillColor || shape.baseFill!;
+              cx.fill();
+            } else if (!shape.img) {
+               // Only fill default blue if no image AND no fill exists
+               cx.fillStyle = 'blue'; 
+               cx.fill();
+            }
+          }
+          cx.restore();
+
+          // Mask out any erased regions from the raster
+          if (shape.erasedPaths && shape.erasedPaths.length > 0) {
+            cx.save();
+            cx.globalCompositeOperation = 'destination-out';
+            shape.erasedPaths.forEach(p => {
+              const path2d = new Path2D(p);
+              cx.fill(path2d);
+            });
+            cx.restore();
+          }
+          
+          return { canvas: c, ctx: cx, data: cx.getImageData(0, 0, c.width, c.height) };
+        };
+
+        const [mRender, gRender] = await Promise.all([
+          rasterizeShape(mannequin), 
+          rasterizeShape(garment)
+        ]);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = mannequin.dims.width;
+        canvas.height = mannequin.dims.height;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        if (!ctx) throw new Error("No Context");
+
+        const mData = mRender.data;
+        const gData = gRender.data;
+        const outData = new ImageData(canvas.width, canvas.height);
+
+        const getShoulders = (data: ImageData, width: number, height: number, label: string) => {
+          let topY = -1;
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              if (data.data[(y * width + x) * 4 + 3] > 10) { topY = y; break; }
+            }
+            if (topY !== -1) break;
+          }
+          if (topY === -1) {
+            console.log(`[${label}] No pixels found!`);
+            return { y: 0, topY: 0, left: 0, right: 0, w: 0 };
+          }
+
+          const shoulderY = Math.min(height - 1, topY + Math.floor(height * 0.15));
+          let sLeft = -1, sRight = -1;
+          for (let x = 0; x < width; x++) {
+            if (data.data[(shoulderY * width + x) * 4 + 3] > 10) {
+              if (sLeft === -1) sLeft = x;
+              sRight = x;
+            }
+          }
+          console.log(`[${label}] topY=${topY}, shoulderY=${shoulderY}, w=${sRight - sLeft}`);
+          return { y: shoulderY, topY, left: sLeft, right: sRight, w: sRight - sLeft };
+        };
+
+        const mSh = getShoulders(mData, canvas.width, canvas.height, "Mannequin");
+        const gSh = getShoulders(gData, gRender.canvas.width, gRender.canvas.height, "Garment");
+
+        // 1) resize dress by shoulder to shoulder globally first
+        const baseScale = (mSh.w > 0 && gSh.w > 0) ? mSh.w / gSh.w : 1;
+        const mCenter = mSh.left + mSh.w / 2;
+        const gCenter = gSh.left + gSh.w / 2;
+        const stretchFactor = garment.stretchFactor || 1.2;
+        console.log(`baseScale: ${baseScale}`);
+
+        let mappedPixels = 0;
+
+        // Ensure we draw the whole garment starting from the TOP of the mannequin
+        for (let y = mSh.topY; y < canvas.height; y++) {
+            let mLeft = -1, mRight = -1;
+            for (let x = 0; x < canvas.width; x++) {
+                if (mData.data[(y * canvas.width + x) * 4 + 3] > 10) {
+                    if (mLeft === -1) mLeft = x;
+                    mRight = x;
+                }
+            }
+
+            const gy = Math.floor(gSh.topY + ((y - mSh.topY) / baseScale));
+
+            if (gy >= 0 && gy < gRender.canvas.height) {
+                let gLeft = -1, gRight = -1;
+                for (let gx = 0; gx < gRender.canvas.width; gx++) {
+                    if (gData.data[(gy * gRender.canvas.width + gx) * 4 + 3] > 10) {
+                        if (gLeft === -1) gLeft = gx;
+                        gRight = gx;
+                    }
+                }
+
+                if (gLeft !== -1 && gRight !== -1) {
+                    // 1b) Keep the global scaled alignment for each row so asymmetric sleeves don't shift!
+                    const baseDrawLeft = mCenter + (gLeft - gCenter) * baseScale;
+                    const baseDrawRight = mCenter + (gRight - gCenter) * baseScale;
+                    const baseGarmentRowWidth = baseDrawRight - baseDrawLeft;
+                    
+                    let targetDrawWidth, drawLeft;
+
+                    if (mLeft !== -1 && mRight !== -1) {
+                        const mannequinRowWidth = mRight - mLeft;
+                        
+                        if (baseGarmentRowWidth < mannequinRowWidth) {
+                            // "Exactly match the mannequin's width" if it is smaller
+                            targetDrawWidth = mannequinRowWidth;
+                            drawLeft = mLeft;
+                        } else {
+                            // If wider, squeeze it slightly to fit the mannequin's curves perfectly!
+                            // This removes the "melting" visual artifacts caused by vertical overhang shifting.
+                            targetDrawWidth = mannequinRowWidth;
+                            drawLeft = mLeft;
+                        }
+                    } else {
+                        targetDrawWidth = baseGarmentRowWidth;
+                        drawLeft = baseDrawLeft;
+                    }
+
+                    const drawRight = drawLeft + targetDrawWidth;
+
+                    // Execute interpolations to write the new pixels down
+                    for (let x = Math.floor(drawLeft); x <= Math.floor(drawRight); x++) {
+
+                        let outY = Math.floor(y);
+                        let outX = x;
+
+                        if (outX >= 0 && outX < canvas.width && outY >= 0 && outY < canvas.height) {
+                            const ratio = (x - drawLeft) / targetDrawWidth;
+                            const gx = Math.floor(gLeft + (ratio * (gRight - gLeft)));
+
+                            if (gx >= 0 && gx < gRender.canvas.width) {
+                                const gIdx = (gy * gRender.canvas.width + gx) * 4;
+
+                                if (gData.data[gIdx + 3] > 0) {
+                                  mappedPixels++;
+                                  const outIdx = (outY * canvas.width + outX) * 4;
+                                  outData.data[outIdx] = gData.data[gIdx];         // R
+                                  outData.data[outIdx + 1] = gData.data[gIdx + 1]; // G
+                                  outData.data[outIdx + 2] = gData.data[gIdx + 2]; // B
+                                  outData.data[outIdx + 3] = Math.max(outData.data[outIdx + 3], gData.data[gIdx + 3]); // A
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        console.log(`Mapped Pixels: ${mappedPixels}`);
+        if (mappedPixels === 0) {
+           console.error("NO PIXELS WERE MAPPED!");
+        }
+
+        ctx.putImageData(outData, 0, 0);
+
+        await new Promise(r => setTimeout(r, 400));
+        const resultUrl = canvas.toDataURL('image/png');
+
+        saveForUndo();
+
+        setWorkspaceShapes(prev => {
+          const others = prev.filter(s => s.id !== garmentId);
+          const garmentShape = prev.find(s => s.id === garmentId);
+          if (!garmentShape) return prev;
+          
+          return [...others, {
+            ...garmentShape,
+            img: resultUrl,
+            position: { ...mannequin.position },
+            scale: mannequin.scale,
+            dims: { ...mannequin.dims },
+            isDrapingAnimated: true,
+            zIndex: Math.max(...prev.map(s => s.zIndex || 0), 100) + 1,
+            dots: [] // Vector points consumed entirely by raster outcome
+          }];
+        });
+
+      } catch (err) {
+        console.error(err);
+        alert("Failed to drape! Check console.");
+      } finally {
+        setAiDraping({ active: false, text: "" });
+      }
+    } else {
+      alert("Garment or Mannequin missing!");
     }
   };
 
@@ -2313,6 +2550,14 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="flex flex-col h-[100dvh] w-full bg-gradient-to-br from-slate-50 via-white to-stone-50 text-slate-900 overflow-hidden select-none touch-none" onClick={() => setContextMenu(null)}>
+      {aiDraping.active && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md">
+           <div className="bg-white p-6 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-sm font-black uppercase text-purple-600 animate-pulse">{aiDraping.text}</p>
+           </div>
+        </div>
+      )}
       {showMannequinModal && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowMannequinModal(false)}>
           <div className="bg-white rounded-3xl shadow-2xl p-6 sm:p-8 max-w-lg w-full max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -3091,7 +3336,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                               <defs>
                                 <clipPath id={`cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
                               </defs>
-                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})`} onPointerDown={(e) => {
+                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} onPointerDown={(e) => {
                                 if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                               }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
@@ -3110,7 +3355,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                   </mask>
                                 )}
                               </defs>
-                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
+                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
                                 if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                                 if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s)); return; }
                                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
@@ -3460,3 +3705,4 @@ export function Studio({ onBack }: { onBack: () => void }) {
       </div>
   );
 }
+
