@@ -1,0 +1,1 @@
+const fs = require('fs'); let c = fs.readFileSync('src/components/Studio.tsx', 'utf8'); c = c.replace(/clipPath=\{\url\\(#cl-\\$\\{shape\.id\\}\\)\\}/g, 'clipPath={\url(#cl-$\\{shape.id\\}-$\\{(shape as any).clipUpdate || shape.dots.length\\})\}'); fs.writeFileSync('src/components/Studio.tsx', c);

@@ -446,9 +446,11 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
   const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
-  const [activeTool, setActiveTool] = useState<"cursor" | "pen" | "ghost" | "fill" | "erase">("cursor");
+  const [activeTool, setActiveTool] = useState<"cursor" | "scissor" | "pen" | "ghost" | "fill" | "erase">("cursor");
   const [workspaceBgColor, setWorkspaceBgColor] = useState<string>('amber');
   const [activeColor, setActiveColor] = useState("#27EEF5");
+  const [scissorDots, setScissorDots] = useState<{x: number, y: number}[]>([]);
+  const scissorTargetRef = useRef<string | null>(null);
   const [activePenSize, setActivePenSize] = useState<number>(4);
   const [activeFillOpacity, setActiveFillOpacity] = useState<number>(1);
   const [keepOriginalColor, setKeepOriginalColor] = useState<boolean>(false);
@@ -2447,7 +2449,25 @@ export function Studio({ onBack }: { onBack: () => void }) {
               <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden text-slate-500 hover:text-slate-800 text-xs font-bold transition-colors">CLOSE ✕</button>
             </div>
             <div className="grid grid-cols-2 gap-2 mb-3">
-              <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-blue-500 to-blue-600 text-white py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
+              <button 
+                onClick={() => {
+                  saveForUndo();
+                  const pts: {id: string, x: number, y: number}[] = [];
+                  const fs = imgDims.width ? 300 / imgDims.width : 1; 
+                  setWorkspaceShapes(prev => [...prev, { id: `s-${Date.now()}`, img: selectedImage!, dots: [
+                    { id: `p1`, x: 0, y: 0 },
+                    { id: `p2`, x: imgDims.width, y: 0 },
+                    { id: `p3`, x: imgDims.width, y: imgDims.height },
+                    { id: `p4`, x: 0, y: imgDims.height }
+                  ], dims: { ...imgDims }, position: { x: 100, y: 100 }, scale: fs, showDots: true, erasedPaths: [], clipUpdate: Date.now(), opacity: 1 }]); 
+                  setSourceDots([]); 
+                  setIsSidebarOpen(false);
+                }}
+                className="col-span-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-2 rounded-md text-[9px] font-bold uppercase shadow-sm hover:shadow-md transition-all"
+              >
+                Add Original Image As-Is
+              </button>
+              <button onClick={() => fileInputRef.current?.click()} className="bg-gradient-to-br from-slate-500 to-slate-600 text-white py-1.5 px-2 rounded-md text-[8px] font-bold uppercase shadow-sm hover:shadow-md transition-all">Upload<input type="file" ref={fileInputRef} onChange={handleFileUpload} accept="image/*" className="hidden" /></button>
               <button id="add-btn" onClick={() => { 
                 // Sample the dots first
                 const ns = "http://www.w3.org/2000/svg"; 
@@ -2591,7 +2611,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
             </div>
           )}
           <div className="absolute left-2 top-1/2 -translate-y-1/2 flex flex-col gap-2 p-2 bg-white/80 rounded-[2rem] shadow-xl z-50">
-            {(["cursor", "pen", "ghost", "shapes", "fill", "erase"] as const).map((t) => (<button key={t} id={t === "shapes" ? "shapes-btn" : `${t}-tool`} onClick={() => t === "shapes" ? setShowShapesModal(true) : setActiveTool(t as any)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400 hover:bg-slate-100'}`}><span className="text-[10px] font-black uppercase">{t === "ghost" ? "👻" : t.charAt(0)}</span></button>))}
+            {(["cursor", "scissor", "pen", "ghost", "shapes", "fill", "erase"] as const).map((t) => (<button key={t} id={t === "shapes" ? "shapes-btn" : `${t}-tool`} onClick={() => t === "shapes" ? setShowShapesModal(true) : setActiveTool(t as any)} className={`w-10 h-10 flex items-center justify-center rounded-xl transition-all ${activeTool === t ? 'bg-yellow-400 text-black' : 'text-slate-400 hover:bg-slate-100'}`}><span className="text-[10px] font-black uppercase">{t === "ghost" ? "👻" : t === "scissor" ? "✂️" : t.charAt(0)}</span></button>))}
             <div className="relative mt-2">
               <button id="color-swatch" onClick={() => setShowColorPanel(v => !v)} title="Choose color and transparency" style={{ backgroundColor: activeColor }} className="w-8 h-8 rounded-lg border border-slate-200 shadow-sm" />
               {showColorPanel && (
@@ -2750,6 +2770,38 @@ export function Studio({ onBack }: { onBack: () => void }) {
               setSelectionRect({ x1: c.x, y1: c.y, x2: c.x, y2: c.y });
             }
             
+            if (activeTool === "scissor") {
+              let shapeId = (e.target as SVGElement).getAttribute('data-shape-id');
+              if (!shapeId) {
+                for (let i = workspaceShapesRef.current.length - 1; i >= 0; i--) {
+                   const s = workspaceShapesRef.current[i];
+                   if (s.isMannequin) continue;
+                   const sW = s.dims.width * s.scale;
+                   const sH = s.dims.height * s.scale;
+                   const cx = s.position.x + sW/2;
+                   const cy = s.position.y + sH/2;
+                   let dx = c.x - cx;
+                   let dy = c.y - cy;
+                   const angle = -(s.rotation || 0) * (Math.PI / 180);
+                   let x1 = dx * Math.cos(angle) - dy * Math.sin(angle);
+                   let y1 = dx * Math.sin(angle) + dy * Math.cos(angle);
+                   if (x1 >= -sW/2 && x1 <= sW/2 && y1 >= -sH/2 && y1 <= sH/2) {
+                      shapeId = s.id; break;
+                   }
+                }
+              }
+              const finalShapeId = shapeId || selectedShapeId || [...workspaceShapesRef.current].reverse().find(s => !s.isMannequin)?.id;
+              if (finalShapeId) {
+                setSelectedShapeId(finalShapeId);
+                scissorTargetRef.current = finalShapeId;
+              } else {
+                scissorTargetRef.current = null;
+              }
+              setScissorDots([{ x: c.x, y: c.y }]);
+              e.currentTarget.setPointerCapture(e.pointerId);
+              return;
+            }
+
             if (activeTool === "erase") { saveForUndo(); sweepErase(c.x, c.y); } 
             if (activeTool === "pen" || activeTool === "ghost") { saveForUndo(); const sid = `st-${Date.now()}`; 
               const maxZ = Math.max(
@@ -2769,6 +2821,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
               setSelectionRect(prev => prev ? { ...prev, x2: c.x, y2: c.y } : null);
             }
             
+            if (activeTool === "scissor" && isPointerDownRef.current) {
+              setScissorDots(prev => {
+                if (prev.length === 0) return [{x: c.x, y: c.y}];
+                const last = prev[prev.length - 1];
+                if (Math.hypot(last.x - c.x, last.y - c.y) > 10) {
+                   return [...prev, {x: c.x, y: c.y}];
+                }
+                return prev;
+              });
+            }
+
             if (activeTool === "erase" && isPointerDownRef.current) sweepErase(c.x, c.y); if ((activeTool === "pen" || activeTool === "ghost") && penRef.current && e.pointerId === penRef.current.pointerId) { if (Math.hypot(c.x - penRef.current!.lastX, c.y - penRef.current!.lastY) >= PEN_SPACING) { setStrokes(prev => prev.map(s => s.id === penRef.current!.strokeId ? { ...s, points: [...s.points, { id: `pt-${Date.now()}`, x: c.x, y: c.y }] } : s));
                 penRef.current!.lastX = c.x;
                 penRef.current!.lastY = c.y;
@@ -2951,6 +3014,35 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   setStrokes(prev => prev.map(st => st.id === rotatingId ? { ...st, rotation: angle + 90 } : st));
                 }
               } }} onPointerUp={(e) => { 
+
+                if (activeTool === "scissor") {
+                   const currTarget = scissorTargetRef.current;
+                   if (currTarget && scissorDots.length >= 3) {
+                      saveForUndo();
+                      const targetShape = workspaceShapes.find(s => s.id === currTarget);
+                      if (targetShape) {
+                          const newLocalDots = scissorDots.map((d, i) => {
+                             let dx = d.x - targetShape.position.x;
+                             let dy = d.y - targetShape.position.y;
+                             let sx = dx / targetShape.scale;
+                             let sy = dy / targetShape.scale;
+                             const cx = targetShape.dims.width / 2;
+                             const cy = targetShape.dims.height / 2;
+                             const rad = -(targetShape.rotation || 0) * (Math.PI / 180);
+                             const localX = (sx - cx) * Math.cos(rad) - (sy - cy) * Math.sin(rad) + cx;
+                             const localY = (sx - cx) * Math.sin(rad) + (sy - cy) * Math.cos(rad) + cy;
+                             return { id: `pt-sc-${Date.now()}-${i}`, x: localX, y: localY };
+                          });
+                          setWorkspaceShapes(prev => prev.map(s => s.id === currTarget ? { ...s, dots: newLocalDots, clipUpdate: Date.now() } : s));
+                          setActiveTool("cursor");
+                      }
+                   }
+                   setScissorDots([]);
+                   scissorTargetRef.current = null;
+                   isPointerDownRef.current = false;
+                   return;
+                }
+
               // Show context menu for selection rectangle only on right-click
               if (selectionRect && Math.abs(selectionRect.x2 - selectionRect.x1) > 10 && Math.abs(selectionRect.y2 - selectionRect.y1) > 10) {
                 if (((e.nativeEvent) as PointerEvent).button === 2 || e.pointerType === 'touch') {
@@ -2997,9 +3089,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           {shape.isMannequin ? (
                             <>
                               <defs>
-                                <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
+                                <clipPath id={`cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
                               </defs>
-                              <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} onPointerDown={(e) => {
+                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})`} onPointerDown={(e) => {
                                 if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
                               }} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
@@ -3010,7 +3102,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                           ) : (
                             <>
                               <defs>
-                                <clipPath id={`cl-${shape.id}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
+                                <clipPath id={`cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}><path d={generatePathData(shape.dots, true)} /></clipPath>
                                 {shape.erasedPaths && shape.erasedPaths.length > 0 && (
                                   <mask id={`ms-${shape.id}`} maskUnits="userSpaceOnUse" x="0" y="0" width={shape.dims.width} height={shape.dims.height}>
                                     <rect x={0} y={0} width={shape.dims.width} height={shape.dims.height} fill="white" />
@@ -3018,7 +3110,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                                   </mask>
                                 )}
                               </defs>
-                              <image data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
+                              <image key={`img-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`} data-shape-id={shape.id} href={shape.img} width={shape.dims.width} height={shape.dims.height} clipPath={`url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})`} mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined} onPointerDown={(e) => {
                                 if (pickColorMode) { e.stopPropagation(); const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                                 if (activeTool === "fill") { e.stopPropagation(); saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s)); return; }
                                 if (activeTool === "cursor" && !isLocked) { e.stopPropagation(); const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y }); }
@@ -3319,6 +3411,40 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   );
                 }
               })}
+
+              {activeTool === "scissor" && scissorDots.length > 0 && (
+                <g pointerEvents="none">
+                  {scissorDots.length > 2 && (
+                    <polygon 
+                      points={scissorDots.map(d => `${d.x},${d.y}`).join(' ')} 
+                      fill="rgba(168, 85, 247, 0.4)" 
+                      stroke="#c084fc" 
+                      strokeWidth="2" 
+                      strokeDasharray="4 4"
+                    />
+                  )}
+                  {scissorDots.length <= 2 && scissorDots.length > 1 && (
+                    <polyline 
+                      points={scissorDots.map(d => `${d.x},${d.y}`).join(' ')} 
+                      fill="none" 
+                      stroke="#c084fc" 
+                      strokeWidth="2" 
+                      strokeDasharray="4 4"
+                    />
+                  )}
+                  {scissorDots.map((dot, i) => (
+                    <circle 
+                      key={`sc-${i}`} 
+                      cx={dot.x} 
+                      cy={dot.y} 
+                      r={4} 
+                      fill="#a855f7" 
+                      stroke="white" 
+                      strokeWidth="1.5" 
+                    />
+                  ))}
+                </g>
+              )}
               </svg>
             </div>
             <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
