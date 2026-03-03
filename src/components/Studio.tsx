@@ -1362,7 +1362,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
       const isMobile = window.innerWidth < 768;
       const posX = isMobile ? 50 : 150;
       const posY = isMobile ? 20 : 30;
-      const scaleValue = isMobile ? 0.35 : 0.6;
+      const scaleValue = isMobile ? 0.25 : 0.45;
       
       const mannequinShape: DistortableShape = {
         id: `mannequin-${Date.now()}`,
