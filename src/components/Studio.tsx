@@ -668,45 +668,208 @@ export function Studio({ onBack }: { onBack: () => void }) {
         const gData = gRender.data;
         const outData = new ImageData(canvas.width, canvas.height);
 
-        const getShoulders = (data: ImageData, width: number, height: number, label: string) => {
+        // Measure at armpit level like the old version (22% for mannequin, 40-60% for garment)
+        const getMeasurement = (data: ImageData, width: number, height: number, label: string, measurePercent: number) => {
           let topY = -1;
+          let bottomY = -1;
           for (let y = 0; y < height; y++) {
             for (let x = 0; x < width; x++) {
-              if (data.data[(y * width + x) * 4 + 3] > 10) { topY = y; break; }
+              if (data.data[(y * width + x) * 4 + 3] > 10) { 
+                if (topY === -1) topY = y;
+                bottomY = y;
+                break; 
+              }
             }
-            if (topY !== -1) break;
           }
           if (topY === -1) {
             console.log(`[${label}] No pixels found!`);
             return { y: 0, topY: 0, left: 0, right: 0, w: 0 };
           }
 
-          const shoulderY = Math.min(height - 1, topY + Math.floor(height * 0.15));
+          const shapeHeight = bottomY - topY;
+          const measureY = Math.min(height - 1, topY + Math.floor(shapeHeight * measurePercent));
           let sLeft = -1, sRight = -1;
           for (let x = 0; x < width; x++) {
-            if (data.data[(shoulderY * width + x) * 4 + 3] > 10) {
+            if (data.data[(measureY * width + x) * 4 + 3] > 10) {
               if (sLeft === -1) sLeft = x;
               sRight = x;
             }
           }
-          console.log(`[${label}] topY=${topY}, shoulderY=${shoulderY}, w=${sRight - sLeft}`);
-          return { y: shoulderY, topY, left: sLeft, right: sRight, w: sRight - sLeft };
+          const w = sRight - sLeft + 1;
+          console.log(`[${label}] topY=${topY}, bottomY=${bottomY}, shapeHeight=${shapeHeight}, measureY=${measureY}, left=${sLeft}, right=${sRight}, w=${w}`);
+          return { y: measureY, topY, left: sLeft, right: sRight, w };
         };
 
-        const mSh = getShoulders(mData, canvas.width, canvas.height, "Mannequin");
-        const gSh = getShoulders(gData, gRender.canvas.width, gRender.canvas.height, "Garment");
+        // For garment, find the widest point between 20-50% to get armpit/bust area
+        const getWidestMeasurement = (data: ImageData, width: number, height: number, label: string) => {
+          let topY = -1;
+          let bottomY = -1;
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              if (data.data[(y * width + x) * 4 + 3] > 10) { 
+                if (topY === -1) topY = y;
+                bottomY = y;
+                break; 
+              }
+            }
+          }
+          if (topY === -1) {
+            console.log(`[${label}] No pixels found!`);
+            return { y: 0, topY: 0, left: 0, right: 0, w: 0 };
+          }
 
-        // 1) resize dress by shoulder to shoulder globally first
+          const shapeHeight = bottomY - topY;
+          let maxW = 0;
+          let bestY = topY;
+          let bestLeft = 0, bestRight = 0;
+          
+          // Scan from 20% to 50% of shape height to find widest point (armpit/bust area)
+          const startY = topY + Math.floor(shapeHeight * 0.20);
+          const endY = topY + Math.floor(shapeHeight * 0.50);
+          
+          for (let y = startY; y <= endY && y < height; y++) {
+            let rowLeft = -1, rowRight = -1;
+            for (let x = 0; x < width; x++) {
+              if (data.data[(y * width + x) * 4 + 3] > 10) {
+                if (rowLeft === -1) rowLeft = x;
+                rowRight = x;
+              }
+            }
+            if (rowLeft !== -1) {
+              const rowW = rowRight - rowLeft + 1;
+              if (rowW > maxW) {
+                maxW = rowW;
+                bestY = y;
+                bestLeft = rowLeft;
+                bestRight = rowRight;
+              }
+            }
+          }
+          
+          console.log(`[${label}] topY=${topY}, widestY=${bestY}, left=${bestLeft}, right=${bestRight}, w=${maxW}`);
+          return { y: bestY, topY, left: bestLeft, right: bestRight, w: maxW };
+        };
+
+
+        // Get shoulder Y position as 15% down from top (for both mannequin and garment)
+        const getShoulderYFixed = (data: ImageData, width: number, height: number, label: string) => {
+          let topY = -1;
+          let bottomY = -1;
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              if (data.data[(y * width + x) * 4 + 3] > 10) { 
+                if (topY === -1) topY = y;
+                bottomY = y;
+                break; 
+              }
+            }
+          }
+          if (topY === -1) return { y: 0, topY: 0 };
+          const shapeHeight = bottomY - topY;
+          const shoulderY = topY + Math.floor(shapeHeight * 0.15);
+          console.log(`[${label}] ShoulderY (15%): ${shoulderY}, topY=${topY}`);
+          return { y: shoulderY, topY };
+        };
+
+        // Mannequin: measure at widest point (20-50%) for SIZING
+        const mSh = getWidestMeasurement(mData, canvas.width, canvas.height, "Mannequin");
+        // Garment: find widest point between 20-50% for SIZING
+        const gSh = getWidestMeasurement(gData, gRender.canvas.width, gRender.canvas.height, "Garment");
+        
+        // For mannequin, shoulder is 7% down from top.
+        const getShoulderY7 = (data: ImageData, width: number, height: number, label: string) => {
+          let topY = -1;
+          let bottomY = -1;
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              if (data.data[(y * width + x) * 4 + 3] > 10) { 
+                if (topY === -1) topY = y;
+                bottomY = y;
+                break; 
+              }
+            }
+          }
+          if (topY === -1) return { y: 0, topY: 0 };
+          const shapeHeight = bottomY - topY;
+          const shoulderY = topY + Math.floor(shapeHeight * 0.07);
+          return { y: shoulderY, topY };
+        };
+        // Universal garment shoulder detection: scan for first row where width increases by 1.5x over top row
+        // Also, always reset garment top to 0 before each drape to prevent cumulative drift
+        const getGarmentShoulderY = (data: ImageData, width: number, height: number, label: string) => {
+          let topY = -1;
+          let bottomY = -1;
+          let topRowWidth = 0;
+          // Find the first non-transparent row (reset top to 0 for draping)
+          let foundFirst = false;
+          for (let y = 0; y < height; y++) {
+            let rowLeft = -1, rowRight = -1;
+            for (let x = 0; x < width; x++) {
+              if (data.data[(y * width + x) * 4 + 3] > 10) {
+                if (rowLeft === -1) rowLeft = x;
+                rowRight = x;
+              }
+            }
+            if (rowLeft !== -1 && !foundFirst) {
+              foundFirst = true;
+              // If the first non-transparent row is not at y=0, shift all rows up so topY=0
+              if (y > 0) {
+                // Shift all rows up by y
+                const newData = new Uint8ClampedArray(data.data.length);
+                for (let sy = y; sy < height; sy++) {
+                  for (let sx = 0; sx < width; sx++) {
+                    for (let c = 0; c < 4; c++) {
+                      newData[((sy-y)*width+sx)*4+c] = data.data[(sy*width+sx)*4+c];
+                    }
+                  }
+                }
+                data.data.set(newData);
+                topY = 0;
+              } else {
+                topY = y;
+              }
+              topRowWidth = rowRight - rowLeft + 1;
+            }
+            if (rowLeft !== -1) {
+              bottomY = y;
+            }
+          }
+          if (topY === -1 || topRowWidth === 0) return { y: 0, topY: 0 };
+          // Scan for first row where width increases by 1.5x over top row
+          for (let y = topY + 1; y < height; y++) {
+            let rowLeft = -1, rowRight = -1;
+            for (let x = 0; x < width; x++) {
+              if (data.data[(y * width + x) * 4 + 3] > 10) {
+                if (rowLeft === -1) rowLeft = x;
+                rowRight = x;
+              }
+            }
+            if (rowLeft !== -1) {
+              const rowW = rowRight - rowLeft + 1;
+              if (rowW > 1.5 * topRowWidth) {
+                return { y: y - topY, topY: 0 };
+              }
+            }
+          }
+          // If not found, just use top
+          return { y: 0, topY: 0 };
+        };
+        const mShoulder = getShoulderY7(mData, canvas.width, canvas.height, "Mannequin");
+        const gShoulder = getGarmentShoulderY(gData, gRender.canvas.width, gRender.canvas.height, "Garment");
+
+        // 1) resize dress by bust/armpit width globally first (proper sizing)
         const baseScale = (mSh.w > 0 && gSh.w > 0) ? mSh.w / gSh.w : 1;
-        const mCenter = mSh.left + mSh.w / 2;
-        const gCenter = gSh.left + gSh.w / 2;
-        const stretchFactor = garment.stretchFactor || 1.2;
-        console.log(`baseScale: ${baseScale}`);
+        // Center calculated from actual left/right positions
+        const mCenter = (mSh.left + mSh.right) / 2;
+        const gCenter = (gSh.left + gSh.right) / 2;
+        console.log(`baseScale: ${baseScale}, mShoulderY: ${mShoulder.y}, gShoulderY: ${gShoulder.y}`);
 
         let mappedPixels = 0;
 
-        // Ensure we draw the whole garment starting from the TOP of the mannequin
+        // Process row by row: position scaled garment, replace mannequin pixels where they overlap
+        // Align garment TOP to mannequin TOP (since resize is based on bust/armpit width)
         for (let y = mSh.topY; y < canvas.height; y++) {
+            // Find mannequin bounds for this row
             let mLeft = -1, mRight = -1;
             for (let x = 0; x < canvas.width; x++) {
                 if (mData.data[(y * canvas.width + x) * 4 + 3] > 10) {
@@ -715,9 +878,12 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 }
             }
 
-            const gy = Math.floor(gSh.topY + ((y - mSh.topY) / baseScale));
+            // Calculate corresponding row in the garment - align garment top (shoulder) to mannequin shoulder, then shift up by 15% of garment height
+            // Align garment shoulder (y=0) to mannequin shoulder (mShoulder.y)
+            const gy = Math.floor((y - mShoulder.y) / baseScale);
 
             if (gy >= 0 && gy < gRender.canvas.height) {
+                // Find garment bounds for this row
                 let gLeft = -1, gRight = -1;
                 for (let gx = 0; gx < gRender.canvas.width; gx++) {
                     if (gData.data[(gy * gRender.canvas.width + gx) * 4 + 3] > 10) {
@@ -727,53 +893,37 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 }
 
                 if (gLeft !== -1 && gRight !== -1) {
-                    // 1b) Keep the global scaled alignment for each row so asymmetric sleeves don't shift!
-                    const baseDrawLeft = mCenter + (gLeft - gCenter) * baseScale;
-                    const baseDrawRight = mCenter + (gRight - gCenter) * baseScale;
-                    const baseGarmentRowWidth = baseDrawRight - baseDrawLeft;
+                    const garmentRowWidth = gRight - gLeft + 1;
                     
-                    let targetDrawWidth, drawLeft;
+                    // Calculate where this garment row maps to in output (using baseScale)
+                    const scaledDrawLeft = mCenter + (gLeft - gCenter) * baseScale;
+                    const scaledDrawRight = mCenter + (gRight - gCenter) * baseScale;
+                    const scaledGarmentWidth = scaledDrawRight - scaledDrawLeft;
 
-                    if (mLeft !== -1 && mRight !== -1) {
-                        const mannequinRowWidth = mRight - mLeft;
-                        
-                        if (baseGarmentRowWidth < mannequinRowWidth) {
-                            // "Exactly match the mannequin's width" if it is smaller
-                            targetDrawWidth = mannequinRowWidth;
-                            drawLeft = mLeft;
-                        } else {
-                            // If wider, squeeze it slightly to fit the mannequin's curves perfectly!
-                            // This removes the "melting" visual artifacts caused by vertical overhang shifting.
-                            targetDrawWidth = mannequinRowWidth;
-                            drawLeft = mLeft;
-                        }
-                    } else {
-                        targetDrawWidth = baseGarmentRowWidth;
-                        drawLeft = baseDrawLeft;
-                    }
-
-                    const drawRight = drawLeft + targetDrawWidth;
-
-                    // Execute interpolations to write the new pixels down
-                    for (let x = Math.floor(drawLeft); x <= Math.floor(drawRight); x++) {
-
-                        let outY = Math.floor(y);
-                        let outX = x;
-
-                        if (outX >= 0 && outX < canvas.width && outY >= 0 && outY < canvas.height) {
-                            const ratio = (x - drawLeft) / targetDrawWidth;
-                            const gx = Math.floor(gLeft + (ratio * (gRight - gLeft)));
+                    // Loop through scaled garment positions (not mannequin positions)
+                    // This maintains the garment's natural pixel ratio without stretching
+                    for (let x = Math.floor(scaledDrawLeft); x <= Math.floor(scaledDrawRight); x++) {
+                        if (x >= 0 && x < canvas.width) {
+                            // Map output x back to original garment x (1:1 with scale)
+                            const ratio = (x - scaledDrawLeft) / scaledGarmentWidth;
+                            const gx = Math.floor(gLeft + (ratio * garmentRowWidth));
 
                             if (gx >= 0 && gx < gRender.canvas.width) {
                                 const gIdx = (gy * gRender.canvas.width + gx) * 4;
 
                                 if (gData.data[gIdx + 3] > 0) {
-                                  mappedPixels++;
-                                  const outIdx = (outY * canvas.width + outX) * 4;
-                                  outData.data[outIdx] = gData.data[gIdx];         // R
-                                  outData.data[outIdx + 1] = gData.data[gIdx + 1]; // G
-                                  outData.data[outIdx + 2] = gData.data[gIdx + 2]; // B
-                                  outData.data[outIdx + 3] = Math.max(outData.data[outIdx + 3], gData.data[gIdx + 3]); // A
+                                    // Check if this position is on the mannequin OR is overflow
+                                    const isOnMannequin = mLeft !== -1 && mRight !== -1 && x >= mLeft && x <= mRight;
+                                    const isOverflow = mLeft === -1 || x < mLeft || x > mRight;
+                                    
+                                    if (isOnMannequin || isOverflow) {
+                                        mappedPixels++;
+                                        const outIdx = (y * canvas.width + x) * 4;
+                                        outData.data[outIdx] = gData.data[gIdx];         // R
+                                        outData.data[outIdx + 1] = gData.data[gIdx + 1]; // G
+                                        outData.data[outIdx + 2] = gData.data[gIdx + 2]; // B
+                                        outData.data[outIdx + 3] = gData.data[gIdx + 3]; // A
+                                    }
                                 }
                             }
                         }
