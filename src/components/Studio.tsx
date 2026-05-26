@@ -91,6 +91,75 @@ interface MannequinMeasurements {
 }
 
 export function Studio({ onBack }: { onBack: () => void }) {
+      const [refineError, setRefineError] = useState<string | null>(null);
+    // Refine image state
+    const [refinePrompt, setRefinePrompt] = useState("");
+    const [isRefiningImage, setIsRefiningImage] = useState(false);
+    // ...existing state hooks...
+    // All shape state hooks...
+    const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
+    // ...other state hooks...
+    // Place after workspaceShapes is defined:
+    const [selectedShapeId, setSelectedShapeId] = useState<string|null>(null);
+    const selectedShape = selectedShapeId ? workspaceShapes?.find(s => s.id === selectedShapeId) : null;
+
+    // Helper: convert dataURL to File
+    function dataURLtoFile(dataurl: string, filename: string) {
+      const arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1], bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+      for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
+      return new File([u8arr], filename, { type: mime });
+    }
+
+    // Refine handler
+    const handleRefineImage = async () => {
+      setRefineError(null);
+      if (!selectedShape || !selectedShape.img) {
+        setRefineError('No shape or image selected.');
+        console.warn('Refine: No selected shape or image.', { selectedShape });
+        return;
+      }
+      setIsRefiningImage(true);
+      try {
+        // Convert base64 or dataURL to File
+        let file: File;
+        if (selectedShape.img.startsWith('data:')) {
+          file = dataURLtoFile(selectedShape.img, 'selected.png');
+        } else {
+          // fallback: fetch as blob
+          const res = await fetch(selectedShape.img);
+          const blob = await res.blob();
+          file = new File([blob], 'selected.png', { type: blob.type });
+        }
+        const formData = new FormData();
+        formData.append('image', file);
+        formData.append('prompt', refinePrompt);
+        formData.append('image_strength', '0.7');
+        formData.append('cfg_scale', '7');
+        formData.append('steps', '30');
+        const response = await fetch('/api/refine-image', { method: 'POST', body: formData });
+        let data;
+        try {
+          data = await response.json();
+        } catch (err) {
+          setRefineError('Failed to parse response from server.');
+          console.error('Refine: Failed to parse response', err);
+          return;
+        }
+        console.log('Refine: API response', data);
+        if (data.resultImage) {
+          setWorkspaceShapes(prev => prev.map(s => s.id === selectedShapeId ? { ...s, img: data.resultImage } : s));
+        } else if (data.error) {
+          setRefineError('API error: ' + data.error);
+        } else {
+          setRefineError('No image returned from API.');
+        }
+      } catch (err: any) {
+        setRefineError('Network or server error: ' + (err?.message || err));
+        console.error('Refine: Network/server error', err);
+      } finally {
+        setIsRefiningImage(false);
+      }
+    };
   // helper: convert hex color + alpha (0..1) to rgba() string
   const hexToRgba = (hex: string, alpha = 1) => {
     if (!hex) return `rgba(0,0,0,${alpha})`;
@@ -448,7 +517,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [imgDims, setImgDims] = useState({ width: 0, height: 0 });
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [sourceDots, setSourceDots] = useState<Dot[]>([]);
-  const [workspaceShapes, setWorkspaceShapes] = useState<DistortableShape[]>([]);
   const [activeTool, setActiveTool] = useState<"cursor" | "scissor" | "pen" | "ghost" | "fill" | "erase">("cursor");
   const [workspaceBgColor, setWorkspaceBgColor] = useState<string>('amber');
   const [activeColor, setActiveColor] = useState("#27EEF5");
@@ -463,7 +531,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [showColorPanel, setShowColorPanel] = useState(false);
   const [showFabricDropdown, setShowFabricDropdown] = useState(false);
   const [isFabricLoading, setIsFabricLoading] = useState(false);
-  const [selectedShapeId, setSelectedShapeId] = useState<string | null>(null);
   const [globalShowDots, setGlobalShowDots] = useState(true);
   const [isLocked, setIsLocked] = useState(false); 
   const [strokes, setStrokes] = useState<Stroke[]>([]);
@@ -3805,6 +3872,8 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   </g>
                   );
                 }
+
+              // Highlight selected shape
               })}
 
               {activeTool === "scissor" && scissorDots.length > 0 && (
@@ -3840,11 +3909,54 @@ export function Studio({ onBack }: { onBack: () => void }) {
                   ))}
                 </g>
               )}
+                {/* Highlight selected shape */}
+                {selectedShapeId && workspaceShapes?.map(s => s.id === selectedShapeId ? (
+                  <g key={s.id + '-highlight'}>
+                    <rect
+                      x={s.position.x - 8}
+                      y={s.position.y - 8}
+                      width={s.dims.width * s.scale + 16}
+                      height={s.dims.height * s.scale + 16}
+                      fill="none"
+                      stroke="#f43f5e"
+                      strokeWidth={4}
+                      strokeDasharray="8 4"
+                      pointerEvents="none"
+                    />
+                  </g>
+                ) : null)}
               </svg>
             </div>
             <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
           </main>
 
+        </div>
+        {/* Footer Refine UI */}
+        <div className="w-full flex flex-col md:flex-row items-center gap-2 px-4 py-3 bg-white border-t border-slate-200 shadow-inner z-50 sticky bottom-0">
+          {refineError && (
+            <div className="w-full text-red-600 text-xs mb-1 text-center">{refineError}</div>
+          )}
+          <input
+            type="text"
+            placeholder="Enter prompt to refine image..."
+            value={refinePrompt}
+            onChange={e => setRefinePrompt(e.target.value)}
+            className="flex-1 border border-slate-300 rounded-md px-3 py-2 text-sm"
+            disabled={isRefiningImage}
+          />
+          <button
+            onClick={handleRefineImage}
+            disabled={isRefiningImage || !refinePrompt || !selectedShape}
+            className="px-5 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-md text-sm font-bold uppercase shadow-md hover:shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {isRefiningImage ? (
+              <>
+                <span className="animate-spin">⏳</span> Refining...
+              </>
+            ) : (
+              <>🪄 Refine Image</>
+            )}
+          </button>
         </div>
         <AdBanner />
         <SubmissionModal
