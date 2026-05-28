@@ -479,7 +479,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
     { value: "wool", label: "Wool" }
   ];
 
-  const [showTryOn, setShowTryOn] = useState(false);
+  const [showTryOn, setShowTryOn] = useState(false); 
+  const [renderedWorkspaceImg, setRenderedWorkspaceImg] = useState<string | null>(null);
+
   const [mounted, setMounted] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -550,6 +552,87 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  // Place this at the top level of your Studio component (below your state declarations)
+useEffect(() => {
+  if (!showTryOn) return;
+
+  const svgElement = document.getElementById("workspace-svg");
+  if (!svgElement) return;
+
+  let active = true;
+
+  const generateFlatCanvasSnapshot = () => {
+    try {
+      // Find whichever shape the user is actively working on in the studio canvas
+      const activeShapeObj = workspaceShapes?.find(s => s.id === selectedShapeId);
+      if (!activeShapeObj) return;
+
+      // 1. Create a clean off-screen canvas matching your layout scales
+      const tempCanvas = document.createElement("canvas");
+      tempCanvas.width = activeShapeObj.dims?.width || 512;
+      tempCanvas.height = activeShapeObj.dims?.height || 512;
+      const ctx = tempCanvas.getContext("2d");
+      if (!ctx) return;
+
+      // Clear layout area to support clean transparency channels
+      ctx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+      // 2. Initialize the background asset image
+      const baseImg = new Image();
+      baseImg.crossOrigin = "anonymous";
+      baseImg.src = activeShapeObj.img;
+      
+      // 3. Chain execution inside the image onload event handler to prevent blank exports
+      baseImg.onload = () => {
+        if (!active) return;
+
+        // Draw the base layer template from the studio
+        ctx.drawImage(baseImg, 0, 0, tempCanvas.width, tempCanvas.height);
+
+        // 4. Composite and bake custom editor brush strokes seamlessly on top
+        strokes.forEach((stroke) => {
+          if (stroke.points.length < 2) return;
+          
+          ctx.beginPath();
+          ctx.strokeStyle = stroke.color || "#3b82f6";
+          ctx.lineWidth = stroke.width || 5;
+          ctx.lineCap = "round";
+          ctx.lineJoin = "round";
+
+          // Align drawing coords relative to the active shape's current selection layer position
+          const startPoint = stroke.points[0];
+          ctx.moveTo(startPoint.x - activeShapeObj.position.x, startPoint.y - activeShapeObj.position.y);
+
+          for (let i = 1; i < stroke.points.length; i++) {
+            ctx.lineTo(stroke.points[i].x - activeShapeObj.position.x, stroke.points[i].y - activeShapeObj.position.y);
+          }
+          
+          if (stroke.closed) ctx.closePath();
+          ctx.stroke();
+        });
+
+        // 5. Output the complete, fully loaded composite image stream
+        const flatDataUrl = tempCanvas.toDataURL("image/png");
+        setRenderedWorkspaceImg(flatDataUrl);
+      };
+
+      baseImg.onerror = (err) => {
+        console.error("Failed to load active base design asset:", err);
+      };
+
+    } catch (err) {
+      console.error("Failed to generate custom composite canvas:", err);
+    }
+  };
+
+  generateFlatCanvasSnapshot();
+
+  return () => {
+    active = false;
+  };
+}, [showTryOn, selectedShapeId, workspaceShapes, strokes]);
+
 
   useEffect(() => {
     fetch('/api/assets')
@@ -3518,11 +3601,17 @@ export function Studio({ onBack }: { onBack: () => void }) {
               isPointerDownRef.current = false; penRef.current = null; setDraggingShapeId(null); setDraggingStrokeId(null); setDraggingDot(null); setDraggingStrokeDot(null); setResizingId(null); setRotatingId(null); }}>
               
               {/* Wrap the workspace viewport inside a layout branch */}
-          {showTryOn ? (
-            <div className="w-full h-full min-h-[480px] flex items-center justify-center bg-black rounded-[3rem] overflow-hidden shadow-2xl">
-              <NecklaceTryOn />
-            </div>
-          ) : (
+  {showTryOn && (
+  <div className="mt-4 p-4 border border-slate-200 rounded-2xl bg-white shadow-sm flex flex-col items-center w-full max-w-[670px] mx-auto">
+    <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">
+      Live Device Try-On Pipeline
+    </h3>
+    {/* Explicitly passing only the custom baked canvas image */}
+    <NecklaceTryOn 
+      selectedImageSrc={renderedWorkspaceImg} 
+    />
+  </div>
+)}
             <svg 
               id="workspace-svg" 
               ref={workspaceRef} 
@@ -3963,7 +4052,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
                 </g>
               ) : null)}
             </svg>
-          )}
+          
 
           </div>
           {/* Tutorial UI Assist Controls */}
