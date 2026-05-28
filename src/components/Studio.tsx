@@ -564,65 +564,90 @@ useEffect(() => {
 
   const generateFlatCanvasSnapshot = () => {
     try {
-      // Find whichever shape the user is actively working on in the studio canvas
       const activeShapeObj = workspaceShapes?.find(s => s.id === selectedShapeId);
       if (!activeShapeObj) return;
 
-      // 1. Create a clean off-screen canvas matching your layout scales
       const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = activeShapeObj.dims?.width || 512;
-      tempCanvas.height = activeShapeObj.dims?.height || 512;
+      const canvasWidth = activeShapeObj.dims?.width || 512;
+      const canvasHeight = activeShapeObj.dims?.height || 512;
+      tempCanvas.width = canvasWidth;
+      tempCanvas.height = canvasHeight;
+      
       const ctx = tempCanvas.getContext("2d");
       if (!ctx) return;
 
-      // Clear layout area to support clean transparency channels
-      ctx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
 
-      // 2. Initialize the background asset image
       const baseImg = new Image();
       baseImg.crossOrigin = "anonymous";
       baseImg.src = activeShapeObj.img;
       
-      // 3. Chain execution inside the image onload event handler to prevent blank exports
       baseImg.onload = () => {
         if (!active) return;
 
-        // Draw the base layer template from the studio
-        ctx.drawImage(baseImg, 0, 0, tempCanvas.width, tempCanvas.height);
+        // 1. Draw the raw template image layout onto the canvas context
+        ctx.drawImage(baseImg, 0, 0, canvasWidth, canvasHeight);
 
-        // 4. Composite and bake custom editor brush strokes seamlessly on top
-        strokes.forEach((stroke) => {
-          if (stroke.points.length < 2) return;
+        // 💡 NEW: If it's a blouse/mannequin template, strip out the solid background pixels instantly
+        const isBlouse = activeShapeObj.id?.includes("blouse") || (activeShapeObj.img && activeShapeObj.img.includes("blouse"));
+        if (isBlouse) {
+          const imgData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+          const data = imgData.data;
           
-          ctx.beginPath();
-          ctx.strokeStyle = stroke.color || "#3b82f6";
-          ctx.lineWidth = stroke.width || 5;
-          ctx.lineCap = "round";
-          ctx.lineJoin = "round";
-
-          // Align drawing coords relative to the active shape's current selection layer position
-          const startPoint = stroke.points[0];
-          ctx.moveTo(startPoint.x - activeShapeObj.position.x, startPoint.y - activeShapeObj.position.y);
-
-          for (let i = 1; i < stroke.points.length; i++) {
-            ctx.lineTo(stroke.points[i].x - activeShapeObj.position.x, stroke.points[i].y - activeShapeObj.position.y);
+          // Loop through every pixel (RGBA) to mask off the light/white backdrop space
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            
+            // Matches whites and very bright gray mannequin backgrounds
+            if (r > 220 && g > 220 && b > 220) {
+              data[i + 3] = 0; // Turn alpha transparent!
+            }
           }
-          
-          if (stroke.closed) ctx.closePath();
-          ctx.stroke();
-        });
+          ctx.putImageData(imgData, 0, 0);
+        }
 
-        // 5. Output the complete, fully loaded composite image stream
+        // 2. Overlay your customized editor brush strokes on top cleanly
+        if (Array.isArray(strokes)) {
+          strokes.forEach((stroke) => {
+            if (!stroke.points || stroke.points.length < 2) return;
+            
+            ctx.beginPath();
+            ctx.strokeStyle = stroke.color || "#3b82f6";
+            ctx.lineWidth = stroke.width || 5;
+            ctx.lineCap = "round";
+            ctx.lineJoin = "round";
+
+            const startPoint = stroke.points[0];
+            ctx.moveTo(
+              startPoint.x - activeShapeObj.position.x, 
+              startPoint.y - activeShapeObj.position.y
+            );
+
+            for (let i = 1; i < stroke.points.length; i++) {
+              ctx.lineTo(
+                stroke.points[i].x - activeShapeObj.position.x, 
+                stroke.points[i].y - activeShapeObj.position.y
+              );
+            }
+            
+            if (stroke.closed) ctx.closePath();
+            ctx.stroke();
+          });
+        }
+
+        // 3. Dispatch the cleanly processed composite layer to the tracker
         const flatDataUrl = tempCanvas.toDataURL("image/png");
         setRenderedWorkspaceImg(flatDataUrl);
       };
 
       baseImg.onerror = (err) => {
-        console.error("Failed to load active base design asset:", err);
+        console.error("Failed to load template layout backdrop:", err);
       };
 
     } catch (err) {
-      console.error("Failed to generate custom composite canvas:", err);
+      console.error("Failed to generate custom composition:", err);
     }
   };
 
@@ -3607,9 +3632,7 @@ useEffect(() => {
       Live Device Try-On Pipeline
     </h3>
     {/* Explicitly passing only the custom baked canvas image */}
-    <NecklaceTryOn 
-      selectedImageSrc={renderedWorkspaceImg} 
-    />
+    <NecklaceTryOn selectedImageSrc={renderedWorkspaceImg} />
   </div>
 )}
             <svg 

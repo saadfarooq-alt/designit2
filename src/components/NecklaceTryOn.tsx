@@ -20,9 +20,9 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const imagesRef = useRef<HTMLImageElement[]>([]);
 
   const necklaceCatalog = React.useMemo(() => {
-    if (selectedImageSrc) {
+  if (selectedImageSrc) {
       return [selectedImageSrc, ...DEFAULT_NECKLACE_FILES];
-    }
+  }
     return DEFAULT_NECKLACE_FILES;
   }, [selectedImageSrc]);
 
@@ -74,6 +74,13 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
       img.onerror = () => resolve(imageSrc);
     });
   };
+
+  // Place this right below your useState declarations inside NecklaceTryOn.tsx
+useEffect(() => {
+  if (selectedImageSrc) {
+    setCurrentIdx(0); // Force-lock to the studio workspace snapshot asset at index 0
+  }
+}, [selectedImageSrc]);
 
   useEffect(() => {
     let active = true;
