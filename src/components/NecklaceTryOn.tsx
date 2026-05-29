@@ -180,6 +180,19 @@ useEffect(() => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
       const landmarker = poseLandmarkerRef.current;
+// --- FIX: Switch from renderedWorkspaceImg to selectedImageSrc ---
+  if (selectedImageSrc) {
+    const testImg = new Image();
+    testImg.src = selectedImageSrc;
+    
+    // Skip frames gracefully if the image dimension buffer hasn't calculated completely
+    if (testImg.naturalWidth === 0 || testImg.naturalHeight === 0) {
+      console.log("⏳ [TRY-ON DOM WATCH] Workspace asset image dimensions not ready yet. Skipping frame...");
+      requestAnimationFrame(predictLoop);
+      return;
+    }
+  }
+  // -----------------------------------------------------------------
 
       if (video && canvas && landmarker && video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
