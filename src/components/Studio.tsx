@@ -9,7 +9,7 @@ import NecklaceTryOn from "./NecklaceTryOn";
 import { 
   ChevronDown, Eraser, Trash, Plus, Image as ImageIcon, Ruler, Ghost, Video, Upload, ArrowLeft, 
   Shirt, Grid, MousePointer, PaintBucket, PenTool, Edit3, Type, Shapes, Palette, Layers, Undo2, 
-  Redo2, Save, Download, Play, Users 
+  Redo2, Download, Play, Users 
 } from "lucide-react";
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
@@ -110,6 +110,236 @@ export function Studio({ onBack }: { onBack: () => void }) {
       for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
       return new File([u8arr], filename, { type: mime });
     }
+
+const syncWorkspaceToTryOn = (): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const svgEl = document.getElementById("workspace-svg");
+      if (!svgEl) {
+        console.warn("Workspace canvas element not found for Try-On synchronization.");
+        return resolve(null);
+      }
+
+      const targetShapeId = selectedShapeId || [...workspaceShapes]
+        .reverse()
+        .find(s => !s.isMannequin && !!s.img)?.id || null;
+
+      try {
+        console.log("💾 [TRY-ON PIPELINE] Initializing comprehensive design texture parsing environment...");
+
+        // 1. Capture exact live metrics
+        const rect = svgEl.getBoundingClientRect();
+        const width = rect.width || svgEl.clientWidth || 800;
+        const height = rect.height || svgEl.clientHeight || 600;
+        let exportX = 0;
+        let exportY = 0;
+        let exportWidth = width;
+        let exportHeight = height;
+
+        // Crop export to selected/active image bounds instead of full canvas.
+        if (targetShapeId) {
+          const targetEl = svgEl.querySelector(`[data-shape-id="${targetShapeId}"]`) as SVGGraphicsElement | null;
+          if (targetEl) {
+            const r = targetEl.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              const padding = 8;
+              const x = r.left - rect.left;
+              const y = r.top - rect.top;
+              exportX = Math.max(0, x - padding);
+              exportY = Math.max(0, y - padding);
+              exportWidth = Math.max(1, Math.min(width - exportX, r.width + padding * 2));
+              exportHeight = Math.max(1, Math.min(height - exportY, r.height + padding * 2));
+            }
+          }
+        }
+
+        const viewBox = `${exportX} ${exportY} ${exportWidth} ${exportHeight}`;
+
+        // 2. Clone the active workspace layout tree
+        const clonedSvg = svgEl.cloneNode(true) as SVGElement;
+
+        // 3. FORCE DEEP DEFS INJECTION (Bypass component cross-tree encapsulation for patterns)
+        let targetDefs = clonedSvg.querySelector("defs");
+        if (!targetDefs) {
+          targetDefs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+          clonedSvg.insertBefore(targetDefs, clonedSvg.firstChild);
+        }
+
+        const sourceDefs = svgEl.querySelectorAll("defs pattern, defs linearGradient, defs filter, pattern");
+        sourceDefs.forEach((defElement) => {
+          if (defElement.id && !targetDefs!.querySelector(`#${defElement.id}`)) {
+            targetDefs!.appendChild(defElement.cloneNode(true));
+          }
+        });
+
+        // 4. STRIP INTERACTIVE EDITOR HUD CLUTTER ONLY (Handles, nodes, control lines)
+        const workspaceClutter = clonedSvg.querySelectorAll([
+          'circle',                       // Vector node drag anchors
+          'rect[stroke-dasharray]',       // Selection transform wireframes
+          'rect[fill="#f97316"]',        // Resize handle
+          'line',                         // Connectivity lines
+          '[id^="dot-"]',                 // Custom layout tracking nodes
+          '[class*="handle"]',            // Handle interface nodes
+          '[class*="grid"]',              // Workspace graph background mesh
+          '#grid-pattern'                 // Master coordinate grid pattern
+        ].join(','));
+        
+        workspaceClutter.forEach(el => el.remove());
+
+        // 5. Remove only mannequin/template helper layers; keep user design images.
+        const templateElements = clonedSvg.querySelectorAll([
+          'image',
+          'path',
+          'g'
+        ].join(','));
+
+        templateElements.forEach((el) => {
+          // Rule A: Never touch texture components or patterns nesting fabrics
+          if (el.closest("pattern") || el.closest("defs") || el.tagName.toLowerCase() === 'pattern') {
+            return;
+          }
+
+          const id = el.getAttribute("id") || "";
+          const className = el.getAttribute("class") || "";
+          const dataShapeId = el.getAttribute("data-shape-id") || "";
+
+          // Keep all user artwork. Strip only mannequin/template helper layers.
+          const isTemplateAsset = 
+            id.includes("mannequin") ||
+            className.includes("mannequin") ||
+            dataShapeId.includes("mannequin");
+
+          if (isTemplateAsset) {
+            // Remove the elements cleanly so the graphics framework bypasses drawing them entirely
+            el.remove();
+          }
+        });
+
+        // 5b. Keep only the selected/active shape branch for Try-On export.
+        if (targetShapeId) {
+          const targetImage = clonedSvg.querySelector(`[data-shape-id="${targetShapeId}"]`);
+          const targetGroup = targetImage?.closest("g") || null;
+
+          clonedSvg.querySelectorAll('[data-shape-id]').forEach((el) => {
+            const shapeId = el.getAttribute('data-shape-id') || '';
+            if (shapeId !== targetShapeId) {
+              const groupToRemove = el.closest('g');
+              if (groupToRemove && groupToRemove !== targetGroup) {
+                groupToRemove.remove();
+              }
+            }
+          });
+
+          if (targetGroup) {
+            Array.from(clonedSvg.children).forEach((child) => {
+              const tag = child.tagName.toLowerCase();
+              if (tag === 'defs') return;
+              if (child === targetGroup || child.contains(targetGroup)) return;
+              child.remove();
+            });
+          }
+        }
+
+        // 6. ASYNCHRONOUS INLINE ASSET CONVERSION PIPELINE FOR MODIFIED TEXTURES
+        const imageElements = clonedSvg.querySelectorAll("image, img");
+        const promises: Promise<void>[] = [];
+
+        imageElements.forEach((img) => {
+          // Keep only the selected/active shape image in Try-On payload.
+          const imageShapeId = img.getAttribute("data-shape-id") || "";
+          if (targetShapeId && imageShapeId && imageShapeId !== targetShapeId) {
+            img.remove();
+            return;
+          }
+
+          const href = img.getAttribute("href") || (img as HTMLImageElement).src;
+          if (href && !href.startsWith("data:")) {
+            const p = new Promise<void>((resolveImg) => {
+              const tempCanvas = document.createElement("canvas");
+              const tempCtx = tempCanvas.getContext("2d");
+              const testImg = new Image();
+              testImg.crossOrigin = "anonymous";
+              
+              testImg.onload = () => {
+                tempCanvas.width = testImg.naturalWidth;
+                tempCanvas.height = testImg.naturalHeight;
+                tempCtx?.drawImage(testImg, 0, 0);
+                try {
+                  const base64Data = tempCanvas.toDataURL("image/png");
+                  img.setAttribute("href", base64Data);
+                  img.removeAttribute("xlink:href"); 
+                } catch (e) {
+                  console.warn("Fabric asset cross-origin generation bypassed.");
+                }
+                resolveImg();
+              };
+              testImg.onerror = () => resolveImg();
+              testImg.src = href;
+            });
+            promises.push(p);
+          }
+        });
+
+        // 7. COMPILING FLATTENED RENDER snapshot
+        Promise.all(promises).then(() => {
+          clonedSvg.setAttribute("width", exportWidth.toString());
+          clonedSvg.setAttribute("height", exportHeight.toString());
+          clonedSvg.setAttribute("viewBox", viewBox);
+          
+          clonedSvg.removeAttribute("class");
+          clonedSvg.style.width = `${exportWidth}px`;
+          clonedSvg.style.height = `${exportHeight}px`;
+          clonedSvg.style.transform = "none";
+
+          const serializer = new XMLSerializer();
+          let svgString = serializer.serializeToString(clonedSvg);
+          if (!svgString.includes("http://www.w3.org/2000/svg")) {
+            svgString = svgString.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
+          }
+
+          const canvas = document.createElement("canvas");
+          canvas.width = exportWidth;
+          canvas.height = exportHeight;
+          const ctx = canvas.getContext("2d");
+
+          if (!ctx) {
+            console.error("Hardware rendering sub-context missing.");
+            return resolve(null);
+          }
+
+          const finalImg = new Image();
+          finalImg.crossOrigin = "anonymous";
+          finalImg.decoding = "async";
+
+          const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+          const svgUrl = URL.createObjectURL(svgBlob);
+          
+          finalImg.onload = () => {
+            URL.revokeObjectURL(svgUrl);
+            ctx.clearRect(0, 0, exportWidth, exportHeight);
+            ctx.drawImage(finalImg, 0, 0, exportWidth, exportHeight);
+
+            const dataUrlOutput = canvas.toDataURL("image/png");
+            setRenderedWorkspaceImg(dataUrlOutput);
+            
+            console.log("💾 [TRY-ON PIPELINE] ✅ Filtered custom modifications compiled successfully!");
+            resolve(dataUrlOutput);
+          };
+
+          finalImg.onerror = () => {
+            URL.revokeObjectURL(svgUrl);
+            console.error("💾 [TRY-ON PIPELINE] ❌ Final framework payload render aborted.");
+            resolve(null);
+          };
+          
+          finalImg.src = svgUrl;
+        });
+
+      } catch (error) {
+        console.error("💾 [TRY-ON PIPELINE] ❌ Frame compiler crash:", error);
+        resolve(null);
+      }
+    });
+  };
 
     // Refine handler
     const handleRefineImage = async () => {
@@ -552,112 +782,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
-
-  // Place this at the top level of your Studio component (below your state declarations)
-useEffect(() => {
-  if (!showTryOn) return;
-
-  const svgElement = document.getElementById("workspace-svg");
-  if (!svgElement) return;
-
-  let active = true;
-
-  const generateFlatCanvasSnapshot = () => {
-    try {
-      const activeShapeObj = workspaceShapes?.find(s => s.id === selectedShapeId);
-      if (!activeShapeObj) return;
-
-      const tempCanvas = document.createElement("canvas");
-      const canvasWidth = activeShapeObj.dims?.width || 512;
-      const canvasHeight = activeShapeObj.dims?.height || 512;
-      tempCanvas.width = canvasWidth;
-      tempCanvas.height = canvasHeight;
-      
-      const ctx = tempCanvas.getContext("2d");
-      if (!ctx) return;
-
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-      const baseImg = new Image();
-      baseImg.crossOrigin = "anonymous";
-      baseImg.src = activeShapeObj.img;
-      
-      baseImg.onload = () => {
-        if (!active) return;
-
-        // 1. Draw the raw template image layout onto the canvas context
-        ctx.drawImage(baseImg, 0, 0, canvasWidth, canvasHeight);
-
-        // 💡 NEW: If it's a blouse/mannequin template, strip out the solid background pixels instantly
-        const isBlouse = activeShapeObj.id?.includes("blouse") || (activeShapeObj.img && activeShapeObj.img.includes("blouse"));
-        if (isBlouse) {
-          const imgData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-          const data = imgData.data;
-          
-          // Loop through every pixel (RGBA) to mask off the light/white backdrop space
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            
-            // Matches whites and very bright gray mannequin backgrounds
-            if (r > 220 && g > 220 && b > 220) {
-              data[i + 3] = 0; // Turn alpha transparent!
-            }
-          }
-          ctx.putImageData(imgData, 0, 0);
-        }
-
-        // 2. Overlay your customized editor brush strokes on top cleanly
-        if (Array.isArray(strokes)) {
-          strokes.forEach((stroke) => {
-            if (!stroke.points || stroke.points.length < 2) return;
-            
-            ctx.beginPath();
-            ctx.strokeStyle = stroke.color || "#3b82f6";
-            ctx.lineWidth = stroke.width || 5;
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
-
-            const startPoint = stroke.points[0];
-            ctx.moveTo(
-              startPoint.x - activeShapeObj.position.x, 
-              startPoint.y - activeShapeObj.position.y
-            );
-
-            for (let i = 1; i < stroke.points.length; i++) {
-              ctx.lineTo(
-                stroke.points[i].x - activeShapeObj.position.x, 
-                stroke.points[i].y - activeShapeObj.position.y
-              );
-            }
-            
-            if (stroke.closed) ctx.closePath();
-            ctx.stroke();
-          });
-        }
-
-        // 3. Dispatch the cleanly processed composite layer to the tracker
-        const flatDataUrl = tempCanvas.toDataURL("image/png");
-        setRenderedWorkspaceImg(flatDataUrl);
-      };
-
-      baseImg.onerror = (err) => {
-        console.error("Failed to load template layout backdrop:", err);
-      };
-
-    } catch (err) {
-      console.error("Failed to generate custom composition:", err);
-    }
-  };
-
-  generateFlatCanvasSnapshot();
-
-  return () => {
-    active = false;
-  };
-}, [showTryOn, selectedShapeId, workspaceShapes, strokes]);
-
 
   useEffect(() => {
     fetch('/api/assets')
@@ -2998,7 +3122,16 @@ useEffect(() => {
         </div>
         <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full border-2 border-[#B87333] shadow-lg animate-pulse">
           <span className="text-[10px] font-black text-slate-800">Click</span>
-          <span className="w-5 h-5 bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black ring-1 ring-white">?</span>
+          <button
+            id="tutorial-btn-header"
+            onClick={runTutorial}
+            disabled={tutorialDisabled}
+            className="w-5 h-5 bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black ring-1 ring-white disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Run interactive tutorial"
+            title="Run interactive tutorial"
+          >
+            ?
+          </button>
           <span className="text-[10px] font-black text-slate-800">for interactive tutorial</span>
         </div>
           <div className="flex items-center gap-1 sm:gap-2">
@@ -3631,8 +3764,14 @@ useEffect(() => {
     <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">
       Live Device Try-On Pipeline
     </h3>
-    {/* Explicitly passing only the custom baked canvas image */}
-    <NecklaceTryOn selectedImageSrc={renderedWorkspaceImg} />
+    {renderedWorkspaceImg ? (
+      <NecklaceTryOn
+        key={`${renderedWorkspaceImg.length}-${renderedWorkspaceImg.slice(-64)}`}
+        selectedImageSrc={renderedWorkspaceImg}
+      />
+    ) : (
+      <div className="text-xs text-slate-500 py-6">Preparing modified PNG for try-on...</div>
+    )}
   </div>
 )}
             <svg 
@@ -4058,28 +4197,12 @@ useEffect(() => {
                 </g>
               )}
               
-              {/* Highlight selected shape */}
-              {selectedShapeId && workspaceShapes?.map(s => s.id === selectedShapeId ? (
-                <g key={s.id + '-highlight'}>
-                  <rect
-                    x={s.position.x - 8}
-                    y={s.position.y - 8}
-                    width={s.dims.width * s.scale + 16}
-                    height={s.dims.height * s.scale + 16}
-                    fill="none"
-                    stroke="#f43f5e"
-                    strokeWidth={4}
-                    strokeDasharray="8 4"
-                    pointerEvents="none"
-                  />
-                </g>
-              ) : null)}
             </svg>
           
 
           </div>
           {/* Tutorial UI Assist Controls */}
-          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
+          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-4 right-6 z-[1000] w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
         </main>
 
         </div>
@@ -4110,22 +4233,48 @@ useEffect(() => {
             )}
           </button>
           <button
-  onClick={() => setShowTryOn(prev => !prev)}
+  onClick={async () => {
+    if (!showTryOn) {
+      console.log("🎒 [STUDIO] Preparing image-only asset for try-on...");
+
+      // Always prefer a rendered snapshot of current edits (not the raw source image URL).
+      let readyAsset: string | null = null;
+      for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
+        readyAsset = await syncWorkspaceToTryOn();
+        if (!readyAsset) {
+          // Allow one frame for pending image/DOM updates, then retry.
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        }
+      }
+
+      // Last-resort fallback only if it's clearly a non-original modified image.
+      if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
+        readyAsset = selectedShape.img;
+      }
+      
+      if (!readyAsset) {
+        alert("No modified image available for try-on. Edit/select an image first.");
+        return;
+      }
+
+      // Ensure Try-On always receives a concrete image payload.
+      setRenderedWorkspaceImg(readyAsset);
+
+      // 2. Turn on the try-on UI container structure first
+      setShowTryOn(true);
+    } else {
+      // Clear assets cleanly when turning the mode off
+      setShowTryOn(false);
+      setRenderedWorkspaceImg(null);
+    }
+  }}
   className={`px-5 py-2.5 rounded-xl font-bold text-white shadow-md transition-all active:scale-95 flex items-center gap-2 ${
     showTryOn 
       ? 'bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700' 
       : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
   }`}
 >
-  {showTryOn ? (
-    <>
-      <span>🎨</span> Return to Studio Canvas
-    </>
-  ) : (
-    <>
-      <span>📸</span> Open Live Try-On
-    </>
-  )}
+  {showTryOn ? "✕ Close Try-On View" : "✨ Test Live on Webcam"}
 </button>
         </div>
         <AdBanner />
