@@ -25,11 +25,10 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const streamRef = useRef<MediaStream | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
   const latestLandmarksRef = useRef<Landmark2D[] | null>(null);
-  const drewOverlayRef = useRef(false);
 
   const necklaceCatalog = React.useMemo(() => {
   if (selectedImageSrc) {
-      return [selectedImageSrc];
+      return [selectedImageSrc, ...DEFAULT_NECKLACE_FILES];
   }
     return DEFAULT_NECKLACE_FILES;
   }, [selectedImageSrc]);
@@ -39,7 +38,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scaleMult, setScaleMult] = useState(1.0);
   const [vertOffset, setVertOffset] = useState(0.0);
-  const [hasDrawnOverlay, setHasDrawnOverlay] = useState(false);
 
   const scaleStep = 0.05;
   const offsetStep = 0.03;
@@ -220,7 +218,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
         if (ctx) {
           const activeImage = imagesRef.current[currentIdx];
-          let drewTracked = false;
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -246,45 +243,26 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
             const rightShoulder = landmarks[12];
 
             if (nose && leftShoulder && rightShoulder) {
-              const nY = nose.y * canvas.height;
-              const lsX = leftShoulder.x * canvas.width;
-              const lsY = leftShoulder.y * canvas.height;
-              const rsX = rightShoulder.x * canvas.width;
-              const rsY = rightShoulder.y * canvas.height;
+              const nY = Math.trunc(nose.y * canvas.height);
+              const lsX = Math.trunc(leftShoulder.x * canvas.width);
+              const lsY = Math.trunc(leftShoulder.y * canvas.height);
+              const rsX = Math.trunc(rightShoulder.x * canvas.width);
+              const rsY = Math.trunc(rightShoulder.y * canvas.height);
 
-              const midX = (lsX + rsX) / 2;
-              const midY = (lsY + rsY) / 2;
+              const midX = Math.trunc((lsX + rsX) / 2);
+              const midY = Math.trunc((lsY + rsY) / 2);
               const shoulderWidth = Math.abs(rsX - lsX);
 
-              const necklaceW = shoulderWidth * scaleMult;
+              const necklaceW = Math.trunc(shoulderWidth * scaleMult);
               const aspect = activeImage.naturalHeight / activeImage.naturalWidth;
-              const necklaceH = necklaceW * aspect;
-              const neckY = nY + (midY - nY) * (0.62 + vertOffset);
-              const drawX = midX - necklaceW / 2;
-              const drawY = neckY - necklaceH / 6;
+              const necklaceH = Math.trunc(necklaceW * aspect);
+              const neckY = Math.trunc(nY + (midY - nY) * (0.62 + vertOffset));
+              const drawX = Math.trunc(midX - necklaceW / 2);
+              const drawY = Math.trunc(neckY - necklaceH / 6);
 
               if (Number.isFinite(drawX) && Number.isFinite(drawY) && necklaceW > 0 && necklaceH > 0) {
                 ctx.drawImage(activeImage, drawX, drawY, necklaceW, necklaceH);
-                drewTracked = true;
-                if (!drewOverlayRef.current) {
-                  drewOverlayRef.current = true;
-                  setHasDrawnOverlay(true);
-                }
               }
-            }
-          }
-
-          // Always draw a visible fallback when tracked placement is unavailable.
-          if (!drewTracked && activeImage) {
-            const fallbackW = canvas.width * 0.32;
-            const aspect = activeImage.naturalHeight / activeImage.naturalWidth;
-            const fallbackH = fallbackW * aspect;
-            const drawX = (canvas.width - fallbackW) / 2;
-            const drawY = (canvas.height - fallbackH) / 2;
-            ctx.drawImage(activeImage, drawX, drawY, fallbackW, fallbackH);
-            if (!drewOverlayRef.current) {
-              drewOverlayRef.current = true;
-              setHasDrawnOverlay(true);
             }
           }
         }
@@ -369,24 +347,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
           }}
         />
 
-        {selectedImageSrc && !hasDrawnOverlay && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={selectedImageSrc}
-            alt="Try-on fallback overlay"
-            style={{
-              position: "absolute",
-              width: "34%",
-              height: "auto",
-              left: "50%",
-              top: "50%",
-              transform: "translate(-50%, -50%) scaleX(-1)",
-              zIndex: 3,
-              pointerEvents: "none",
-              opacity: 0.95
-            }}
-          />
-        )}
       </div>
       {!isActive && <p style={{ fontSize: "14px", color: "#888" }}>{statusText}</p>}
     </div>
