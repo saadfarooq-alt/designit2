@@ -3122,7 +3122,16 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         </div>
         <div className="absolute left-1/2 -translate-x-1/2 hidden lg:flex items-center gap-2 px-4 py-2 bg-gradient-to-br from-slate-100 to-slate-200 rounded-full border-2 border-[#B87333] shadow-lg animate-pulse">
           <span className="text-[10px] font-black text-slate-800">Click</span>
-          <span className="w-5 h-5 bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black ring-1 ring-white">?</span>
+          <button
+            id="tutorial-btn-header"
+            onClick={runTutorial}
+            disabled={tutorialDisabled}
+            className="w-5 h-5 bg-gradient-to-br from-rose-500 to-rose-600 text-white rounded-full flex items-center justify-center text-[10px] font-black ring-1 ring-white disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Run interactive tutorial"
+            title="Run interactive tutorial"
+          >
+            ?
+          </button>
           <span className="text-[10px] font-black text-slate-800">for interactive tutorial</span>
         </div>
           <div className="flex items-center gap-1 sm:gap-2">
@@ -4193,7 +4202,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
           </div>
           {/* Tutorial UI Assist Controls */}
-          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-6 right-6 w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
+          <button onClick={runTutorial} disabled={tutorialDisabled} className="fixed bottom-4 right-6 z-[1000] w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-500 text-white rounded-full font-black shadow-2xl border-4 border-white hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100">?</button>
         </main>
 
         </div>
