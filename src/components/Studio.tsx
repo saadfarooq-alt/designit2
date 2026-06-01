@@ -4257,20 +4257,6 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         return;
       }
 
-      const debugWin = window.open('', '_blank', 'width=760,height=820');
-      if (debugWin) {
-        debugWin.document.write(`
-          <html>
-            <head><title>Try-On Payload Preview</title></head>
-            <body style="margin:0;padding:16px;background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;">
-              <div style="font-size:14px;margin-bottom:10px;">Try-On payload image preview</div>
-              <img src="${readyAsset}" alt="Try-On Payload" style="max-width:100%;height:auto;border:1px solid #334155;border-radius:8px;background:#111827;" />
-            </body>
-          </html>
-        `);
-        debugWin.document.close();
-      }
-
       // Ensure Try-On always receives a concrete image payload.
       setRenderedWorkspaceImg(readyAsset);
 

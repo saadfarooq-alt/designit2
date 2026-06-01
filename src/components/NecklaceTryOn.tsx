@@ -25,7 +25,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const streamRef = useRef<MediaStream | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
   const latestLandmarksRef = useRef<Landmark2D[] | null>(null);
-  const lastDebugAlertSrcRef = useRef<string | null>(null);
 
   const necklaceCatalog = React.useMemo(() => {
   if (selectedImageSrc) {
@@ -42,45 +41,6 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
 
   const scaleStep = 0.05;
   const offsetStep = 0.03;
-
-  useEffect(() => {
-    if (!selectedImageSrc) {
-      return;
-    }
-    if (lastDebugAlertSrcRef.current === selectedImageSrc) {
-      return;
-    }
-
-    lastDebugAlertSrcRef.current = selectedImageSrc;
-
-    const debugWindow = window.open("", "_blank", "width=760,height=760");
-    if (!debugWindow) {
-      window.alert("Popup blocked. Please allow popups to preview the received image.");
-      return;
-    }
-
-    debugWindow.document.title = "NecklaceTryOn Received Image";
-    debugWindow.document.body.style.margin = "0";
-    debugWindow.document.body.style.padding = "16px";
-    debugWindow.document.body.style.background = "#111";
-    debugWindow.document.body.style.color = "#eee";
-    debugWindow.document.body.style.fontFamily = "monospace";
-
-    const label = debugWindow.document.createElement("div");
-    label.textContent = `Received image (${selectedImageSrc.length} chars)`;
-    label.style.marginBottom = "10px";
-    debugWindow.document.body.appendChild(label);
-
-    const img = debugWindow.document.createElement("img");
-    img.src = selectedImageSrc;
-    img.alt = "Received image";
-    img.style.maxWidth = "100%";
-    img.style.maxHeight = "calc(100vh - 60px)";
-    img.style.objectFit = "contain";
-    img.style.border = "1px solid #333";
-    img.style.background = "#222";
-    debugWindow.document.body.appendChild(img);
-  }, [selectedImageSrc]);
 
   useEffect(() => {
     let cancelled = false;
