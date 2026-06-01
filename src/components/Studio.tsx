@@ -148,7 +148,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         // 4. STRIP INTERACTIVE EDITOR HUD CLUTTER ONLY (Handles, nodes, control lines)
         const workspaceClutter = clonedSvg.querySelectorAll([
           'circle',                       // Vector node drag anchors
-          'rect[stroke-dasharray="4,4"]', // Selection transform wireframes
+          'rect[stroke-dasharray]',       // Selection transform wireframes
+          'rect[fill="#f97316"]',        // Resize handle
           'line',                         // Connectivity lines
           '[id^="dot-"]',                 // Custom layout tracking nodes
           '[class*="handle"]',            // Handle interface nodes
@@ -158,8 +159,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         
         workspaceClutter.forEach(el => el.remove());
 
-        // 5. EXTRACT & ERASE ORIGINAL SHIRT TEMPLATE SHAPES & LAYERS Completely
-        // We locate elements explicitly designated as mannequin layers or baseline template indicators
+        // 5. Remove only mannequin/template helper layers; keep user design images.
         const templateElements = clonedSvg.querySelectorAll([
           'image',
           'path',
@@ -173,19 +173,12 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           }
 
           const id = el.getAttribute("id") || "";
-          const href = el.getAttribute("href") || "";
           const className = el.getAttribute("class") || "";
           const dataShapeId = el.getAttribute("data-shape-id") || "";
 
-          // Target background shirt files, structural guides, or mannequin layouts
+          // Keep all user artwork. Strip only mannequin/template helper layers.
           const isTemplateAsset = 
-            id.includes("template") || 
-            href.includes("template") || 
-            href.includes("mockup") || 
-            href.includes("base_") ||
-            href.includes("mannequin") ||
             id.includes("mannequin") ||
-            className.includes("template") ||
             className.includes("mannequin") ||
             dataShapeId.includes("mannequin");
 
@@ -201,7 +194,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
         imageElements.forEach((img) => {
           const href = img.getAttribute("href") || (img as HTMLImageElement).src;
-          if (href && !href.startsWith("data:") && !href.startsWith("blob:")) {
+          if (href && !href.startsWith("data:")) {
             const p = new Promise<void>((resolveImg) => {
               const tempCanvas = document.createElement("canvas");
               const tempCtx = tempCanvas.getContext("2d");
@@ -725,112 +718,6 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
   const workspaceRef = useRef<SVGSVGElement | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
-
-  // Place this at the top level of your Studio component (below your state declarations)
-useEffect(() => {
-  if (!showTryOn) return;
-
-  const svgElement = document.getElementById("workspace-svg");
-  if (!svgElement) return;
-
-  let active = true;
-
-  const generateFlatCanvasSnapshot = () => {
-    try {
-      const activeShapeObj = workspaceShapes?.find(s => s.id === selectedShapeId);
-      if (!activeShapeObj) return;
-
-      const tempCanvas = document.createElement("canvas");
-      const canvasWidth = activeShapeObj.dims?.width || 512;
-      const canvasHeight = activeShapeObj.dims?.height || 512;
-      tempCanvas.width = canvasWidth;
-      tempCanvas.height = canvasHeight;
-      
-      const ctx = tempCanvas.getContext("2d");
-      if (!ctx) return;
-
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-      const baseImg = new Image();
-      baseImg.crossOrigin = "anonymous";
-      baseImg.src = activeShapeObj.img;
-      
-      baseImg.onload = () => {
-        if (!active) return;
-
-        // 1. Draw the raw template image layout onto the canvas context
-        ctx.drawImage(baseImg, 0, 0, canvasWidth, canvasHeight);
-
-        // 💡 NEW: If it's a blouse/mannequin template, strip out the solid background pixels instantly
-        const isBlouse = activeShapeObj.id?.includes("blouse") || (activeShapeObj.img && activeShapeObj.img.includes("blouse"));
-        if (isBlouse) {
-          const imgData = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-          const data = imgData.data;
-          
-          // Loop through every pixel (RGBA) to mask off the light/white backdrop space
-          for (let i = 0; i < data.length; i += 4) {
-            const r = data[i];
-            const g = data[i + 1];
-            const b = data[i + 2];
-            
-            // Matches whites and very bright gray mannequin backgrounds
-            if (r > 220 && g > 220 && b > 220) {
-              data[i + 3] = 0; // Turn alpha transparent!
-            }
-          }
-          ctx.putImageData(imgData, 0, 0);
-        }
-
-        // 2. Overlay your customized editor brush strokes on top cleanly
-        if (Array.isArray(strokes)) {
-          strokes.forEach((stroke) => {
-            if (!stroke.points || stroke.points.length < 2) return;
-            
-            ctx.beginPath();
-            ctx.strokeStyle = stroke.color || "#3b82f6";
-            ctx.lineWidth = stroke.width || 5;
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
-
-            const startPoint = stroke.points[0];
-            ctx.moveTo(
-              startPoint.x - activeShapeObj.position.x, 
-              startPoint.y - activeShapeObj.position.y
-            );
-
-            for (let i = 1; i < stroke.points.length; i++) {
-              ctx.lineTo(
-                stroke.points[i].x - activeShapeObj.position.x, 
-                stroke.points[i].y - activeShapeObj.position.y
-              );
-            }
-            
-            if (stroke.closed) ctx.closePath();
-            ctx.stroke();
-          });
-        }
-
-        // 3. Dispatch the cleanly processed composite layer to the tracker
-        const flatDataUrl = tempCanvas.toDataURL("image/png");
-        setRenderedWorkspaceImg(flatDataUrl);
-      };
-
-      baseImg.onerror = (err) => {
-        console.error("Failed to load template layout backdrop:", err);
-      };
-
-    } catch (err) {
-      console.error("Failed to generate custom composition:", err);
-    }
-  };
-
-  generateFlatCanvasSnapshot();
-
-  return () => {
-    active = false;
-  };
-}, [showTryOn, selectedShapeId, workspaceShapes, strokes]);
-
 
   useEffect(() => {
     fetch('/api/assets')
@@ -3804,8 +3691,14 @@ useEffect(() => {
     <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">
       Live Device Try-On Pipeline
     </h3>
-    {/* Explicitly passing only the custom baked canvas image */}
-    <NecklaceTryOn selectedImageSrc={renderedWorkspaceImg} />
+    {(renderedWorkspaceImg || selectedShape?.img || selectedImage) ? (
+      <NecklaceTryOn
+        key={(renderedWorkspaceImg || selectedShape?.img || selectedImage || '').slice(0, 64)}
+        selectedImageSrc={renderedWorkspaceImg || selectedShape?.img || selectedImage}
+      />
+    ) : (
+      <div className="text-xs text-slate-500 py-6">Preparing modified PNG for try-on...</div>
+    )}
   </div>
 )}
             <svg 
@@ -4269,15 +4162,33 @@ useEffect(() => {
           <button
   onClick={async () => {
     if (!showTryOn) {
-      console.log("🎒 [STUDIO] Preparing workspace asset before initializing camera stream...");
-      
-      // 1. Await the complete canvas-to-string generation payload
-      const readyAsset = await syncWorkspaceToTryOn();
+      console.log("🎒 [STUDIO] Preparing image-only asset for try-on...");
+
+      // Send just the selected/active image, not the whole workspace canvas.
+      let readyAsset = selectedShape?.img || selectedImage || null;
+      if (!readyAsset) readyAsset = await getDesignImage();
       
       if (!readyAsset) {
-        alert("Could not process studio workspace asset safely. Try again.");
+        alert("No image available for try-on. Select or add an image first.");
         return;
       }
+
+      const debugWin = window.open('', '_blank', 'width=760,height=820');
+      if (debugWin) {
+        debugWin.document.write(`
+          <html>
+            <head><title>Try-On Payload Preview</title></head>
+            <body style="margin:0;padding:16px;background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;">
+              <div style="font-size:14px;margin-bottom:10px;">Try-On payload image preview</div>
+              <img src="${readyAsset}" alt="Try-On Payload" style="max-width:100%;height:auto;border:1px solid #334155;border-radius:8px;background:#111827;" />
+            </body>
+          </html>
+        `);
+        debugWin.document.close();
+      }
+
+      // Ensure Try-On always receives a concrete image payload.
+      setRenderedWorkspaceImg(readyAsset);
 
       // 2. Turn on the try-on UI container structure first
       setShowTryOn(true);
