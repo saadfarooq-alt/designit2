@@ -6,11 +6,10 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import NecklaceTryOn from "./NecklaceTryOn";
-import html2canvas from 'html2canvas';
 import { 
   ChevronDown, Eraser, Trash, Plus, Image as ImageIcon, Ruler, Ghost, Video, Upload, ArrowLeft, 
   Shirt, Grid, MousePointer, PaintBucket, PenTool, Edit3, Type, Shapes, Palette, Layers, Undo2, 
-  Redo2, Save, Download, Play, Users 
+  Redo2, Download, Play, Users 
 } from "lucide-react";
 import ImageTracer from "imagetracerjs";
 import { removeBackground, preload } from '@imgly/background-removal';
@@ -111,133 +110,6 @@ export function Studio({ onBack }: { onBack: () => void }) {
       for (let i = 0; i < n; i++) u8arr[i] = bstr.charCodeAt(i);
       return new File([u8arr], filename, { type: mime });
     }
-
-  const handleSaveToDevice = async () => {
-  const svgEl = document.getElementById("workspace-svg");
-  if (!svgEl) {
-    alert("Workspace canvas element not found.");
-    return;
-  }
-
-  try {
-    console.log("💾 [SAVE DESIGN] Initiating clean canvas bake...");
-
-    // 1. Set explicit layout boundaries
-    const width = svgEl.clientWidth || svgEl.getBoundingClientRect().width || 800;
-    const height = svgEl.clientHeight || svgEl.getBoundingClientRect().height || 600;
-    const viewBox = svgEl.getAttribute("viewBox") || `0 0 ${width} ${height}`;
-
-    // 2. Clone the structural layout so we can scrub editor overlays without touching the screen
-    const clonedSvg = svgEl.cloneNode(true) as SVGElement;
-
-    // 3. TARGET AND REMOVE ALL ACTIVE BOUNDING BOXES, CONTROL DOTS, AND LINES
-    // This looks for standard selectors, dynamic IDs, and transform container wrappers
-    const activeEditorClutter = clonedSvg.querySelectorAll([
-      'circle',                      // Strips out all dot dragging anchors
-      'rect[stroke-dasharray]',      // Strips out dashed selection bounding boxes
-      'line',                        // Strips any connecting handle lines
-      '[id^="dot-"]',                // Strips custom dot IDs
-      '[class*="handle"]',           // Strips class configurations like .vertex-handle
-      '#grid-pattern',               // Strips workspace grid system if embedded
-      'g[class*="selection"]',       // Strips wrapping selection elements
-      'g[class*="transform"]'        // Strips transform coordinate rings
-    ].join(','));
-    
-    activeEditorClutter.forEach(el => el.remove());
-
-    // 4. Process and convert all nested background image textures to safe base64 blobs
-    const imageElements = clonedSvg.querySelectorAll("image, img");
-    const promises: Promise<void>[] = [];
-
-    imageElements.forEach((img) => {
-      const href = img.getAttribute("href") || (img as HTMLImageElement).src;
-      if (href && !href.startsWith("data:") && !href.startsWith("blob:")) {
-        const p = new Promise<void>((resolve) => {
-          const tempCanvas = document.createElement("canvas");
-          const tempCtx = tempCanvas.getContext("2d");
-          const testImg = new Image();
-          testImg.crossOrigin = "anonymous";
-          
-          testImg.onload = () => {
-            tempCanvas.width = testImg.naturalWidth;
-            tempCanvas.height = testImg.naturalHeight;
-            tempCtx?.drawImage(testImg, 0, 0);
-            try {
-              const base64Data = tempCanvas.toDataURL("image/png");
-              img.setAttribute("href", base64Data);
-            } catch (e) {
-              console.warn("Could not inline resource asset:", href);
-            }
-            resolve();
-          };
-          testImg.onerror = () => resolve();
-          testImg.src = href;
-        });
-        promises.push(p);
-      }
-    });
-
-    // Wait until background assets finish computing
-    await Promise.all(promises);
-
-    // 5. Establish layout properties on the final export document
-    clonedSvg.setAttribute("width", width.toString());
-    clonedSvg.setAttribute("height", height.toString());
-    clonedSvg.setAttribute("viewBox", viewBox);
-
-    // 6. Build clean XML string data
-    const serializer = new XMLSerializer();
-    let svgString = serializer.serializeToString(clonedSvg);
-    if (!svgString.includes("http://www.w3.org/2000/svg")) {
-      svgString = svgString.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-    }
-
-    // 7. Setup clean detached target graphics context
-    const canvas = document.createElement("canvas");
-    canvas.width = width * 2; // Double density for clean prints
-    canvas.height = height * 2;
-    const ctx = canvas.getContext("2d");
-
-    if (!ctx) {
-      alert("Failed to initialize hardware graphics context.");
-      return;
-    }
-    ctx.scale(2, 2);
-
-    const finalImg = new Image();
-    finalImg.crossOrigin = "anonymous";
-    
-    finalImg.onload = () => {
-      ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(finalImg, 0, 0, width, height);
-
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          alert("Image processing failed.");
-          return;
-        }
-
-        const fileUrl = URL.createObjectURL(blob);
-        const downloadLink = document.createElement("a");
-        downloadLink.href = fileUrl;
-        downloadLink.download = `design-${Date.now()}.png`;
-        
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        
-        document.body.removeChild(downloadLink);
-        URL.revokeObjectURL(fileUrl);
-        console.log("💾 [SAVE DESIGN] ✅ Saved clean flattened graphics layout!");
-      }, "image/png");
-    };
-
-    finalImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
-
-  } catch (error) {
-    console.error("💾 [SAVE DESIGN] ❌ Critical failure during image extraction workflow:", error);
-    alert("Error occurred while generating clean design snapshot.");
-  }
-};
 
 const syncWorkspaceToTryOn = (): Promise<string | null> => {
     return new Promise((resolve) => {
@@ -3633,17 +3505,6 @@ useEffect(() => {
               Submit to Community
             </button>
           </div>
-          {/* Header Action Alignment Block */}
-<div className="flex items-center gap-2 ml-auto">
-  <button
-    onClick={handleSaveToDevice}
-    className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white px-3 py-1.5 rounded-md text-[9px] font-bold uppercase shadow hover:shadow-md transition-all"
-  >
-    <Save size={10} /> Save Design
-  </button>
-
-  
-</div>
           <div ref={canvasRef} className="w-full h-[calc(100vh-140px)] pb-[100px] md:pb-[120px] p-2 lg:p-8 overflow-auto" onPointerDown={(e) => {  
             // REST OF EXISTING LOGIC
             isPointerDownRef.current = true; 
@@ -4370,22 +4231,6 @@ useEffect(() => {
                 </g>
               )}
               
-              {/* Highlight selected shape */}
-              {selectedShapeId && workspaceShapes?.map(s => s.id === selectedShapeId ? (
-                <g key={s.id + '-highlight'}>
-                  <rect
-                    x={s.position.x - 8}
-                    y={s.position.y - 8}
-                    width={s.dims.width * s.scale + 16}
-                    height={s.dims.height * s.scale + 16}
-                    fill="none"
-                    stroke="#f43f5e"
-                    strokeWidth={4}
-                    strokeDasharray="8 4"
-                    pointerEvents="none"
-                  />
-                </g>
-              ) : null)}
             </svg>
           
 
