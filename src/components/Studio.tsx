@@ -214,6 +214,31 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           }
         });
 
+        // 5b. Keep only the selected/active shape branch for Try-On export.
+        if (targetShapeId) {
+          const targetImage = clonedSvg.querySelector(`[data-shape-id="${targetShapeId}"]`);
+          const targetGroup = targetImage?.closest("g") || null;
+
+          clonedSvg.querySelectorAll('[data-shape-id]').forEach((el) => {
+            const shapeId = el.getAttribute('data-shape-id') || '';
+            if (shapeId !== targetShapeId) {
+              const groupToRemove = el.closest('g');
+              if (groupToRemove && groupToRemove !== targetGroup) {
+                groupToRemove.remove();
+              }
+            }
+          });
+
+          if (targetGroup) {
+            Array.from(clonedSvg.children).forEach((child) => {
+              const tag = child.tagName.toLowerCase();
+              if (tag === 'defs') return;
+              if (child === targetGroup || child.contains(targetGroup)) return;
+              child.remove();
+            });
+          }
+        }
+
         // 6. ASYNCHRONOUS INLINE ASSET CONVERSION PIPELINE FOR MODIFIED TEXTURES
         const imageElements = clonedSvg.querySelectorAll("image, img");
         const promises: Promise<void>[] = [];
@@ -283,8 +308,13 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
           const finalImg = new Image();
           finalImg.crossOrigin = "anonymous";
+          finalImg.decoding = "async";
+
+          const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+          const svgUrl = URL.createObjectURL(svgBlob);
           
           finalImg.onload = () => {
+            URL.revokeObjectURL(svgUrl);
             ctx.clearRect(0, 0, exportWidth, exportHeight);
             ctx.drawImage(finalImg, 0, 0, exportWidth, exportHeight);
 
@@ -296,11 +326,12 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           };
 
           finalImg.onerror = () => {
+            URL.revokeObjectURL(svgUrl);
             console.error("💾 [TRY-ON PIPELINE] ❌ Final framework payload render aborted.");
             resolve(null);
           };
           
-          finalImg.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgString)}`;
+          finalImg.src = svgUrl;
         });
 
       } catch (error) {
@@ -3726,7 +3757,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     </h3>
     {renderedWorkspaceImg ? (
       <NecklaceTryOn
-        key={renderedWorkspaceImg.slice(0, 64)}
+        key={`${renderedWorkspaceImg.length}-${renderedWorkspaceImg.slice(-64)}`}
         selectedImageSrc={renderedWorkspaceImg}
       />
     ) : (
@@ -4198,9 +4229,13 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       console.log("🎒 [STUDIO] Preparing image-only asset for try-on...");
 
       // Always prefer a rendered snapshot of current edits (not the raw source image URL).
-      let readyAsset = await syncWorkspaceToTryOn();
-      if (!readyAsset) {
-        readyAsset = await getDesignImage();
+      let readyAsset: string | null = null;
+      for (let attempt = 0; attempt < 3 && !readyAsset; attempt++) {
+        readyAsset = await syncWorkspaceToTryOn();
+        if (!readyAsset) {
+          // Allow one frame for pending image/DOM updates, then retry.
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        }
       }
 
       // Last-resort fallback only if it's clearly a non-original modified image.

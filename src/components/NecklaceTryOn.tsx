@@ -12,6 +12,11 @@ interface NecklaceTryOnProps {
   selectedImageSrc?: string | null;
 }
 
+type Landmark2D = {
+  x: number;
+  y: number;
+};
+
 export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -19,6 +24,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const requestRef = useRef<number | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const imagesRef = useRef<HTMLImageElement[]>([]);
+  const latestLandmarksRef = useRef<Landmark2D[] | null>(null);
+  const drewOverlayRef = useRef(false);
 
   const necklaceCatalog = React.useMemo(() => {
   if (selectedImageSrc) {
@@ -32,6 +39,7 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
   const [currentIdx, setCurrentIdx] = useState(0);
   const [scaleMult, setScaleMult] = useState(1.0);
   const [vertOffset, setVertOffset] = useState(0.0);
+  const [hasDrawnOverlay, setHasDrawnOverlay] = useState(false);
 
   const scaleStep = 0.05;
   const offsetStep = 0.03;
@@ -70,52 +78,15 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     };
   }, []);
 
-  // Helper function to dynamically clear white/near-white canvas backgrounds
-  const removeWhiteBackground = (imageSrc: string): Promise<string> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.src = imageSrc;
-      img.onload = () => {
-        const tempCanvas = document.createElement("canvas");
-        tempCanvas.width = img.width;
-        tempCanvas.height = img.height;
-        const ctx = tempCanvas.getContext("2d");
-        if (!ctx) {
-          resolve(imageSrc);
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-        const data = imgData.data;
-
-        // Loop through every pixel (RGBA) to target white background pixels
-        for (let i = 0; i < data.length; i += 4) {
-          const r = data[i];
-          const g = data[i + 1];
-          const b = data[i + 2];
-          
-          // Target pixels close to white
-          if (r > 230 && g > 230 && b > 230) {
-            data[i + 3] = 0; // Set Alpha Channel to 0 (Fully Transparent)
-          }
-        }
-
-        ctx.putImageData(imgData, 0, 0);
-        resolve(tempCanvas.toDataURL("image/png"));
-      };
-      img.onerror = () => resolve(imageSrc);
-    });
-  };
-
   useEffect(() => {
     let active = true;
 
     const loadImageSafe = (src: string) => {
       return new Promise<HTMLImageElement | null>((resolve) => {
         const img = new Image();
-        img.crossOrigin = "anonymous";
+        if (!src.startsWith("data:") && !src.startsWith("blob:")) {
+          img.crossOrigin = "anonymous";
+        }
         img.onload = () => {
           if (img.naturalWidth > 0 && img.naturalHeight > 0) {
             resolve(img);
@@ -131,22 +102,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
     async function setup() {
       try {
         const loadedImagesRaw = await Promise.all(
-          necklaceCatalog.map(async (src, idx) => {
-            let finalSrc = src;
-
-            if (selectedImageSrc && idx === 0) {
-              setStatusText("Cleaning design background...");
-              finalSrc = await removeWhiteBackground(src);
-            }
-
-            let loaded = await loadImageSafe(finalSrc);
-
-            // Fallback: if cleaned data URL failed, try original source directly.
-            if (!loaded && selectedImageSrc && idx === 0 && finalSrc !== src) {
-              loaded = await loadImageSafe(src);
-            }
-
-            return loaded;
+          necklaceCatalog.map(async (src) => {
+            return loadImageSafe(src);
           })
         );
 
@@ -255,29 +212,40 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
       const canvas = canvasRef.current;
       const landmarker = poseLandmarkerRef.current;
 
-      if (video && canvas && video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-
+      if (video && canvas) {
         // Keep the draw surface valid even before metadata is fully available.
         canvas.width = video.videoWidth || 640;
         canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext("2d");
 
         if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
           const activeImage = imagesRef.current[currentIdx];
           let drewTracked = false;
 
-          if (landmarker) {
-            const startTimeMs = performance.now();
-            const results = landmarker.detectForVideo(video, startTimeMs);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            if (results.landmarks && results.landmarks.length > 0 && activeImage) {
-              const landmarks = results.landmarks[0];
-              const nose = landmarks[0];
-              const leftShoulder = landmarks[11];
-              const rightShoulder = landmarks[12];
+          if (landmarker && video.currentTime !== lastVideoTime) {
+            lastVideoTime = video.currentTime;
+            try {
+              const startTimeMs = performance.now();
+              const results = landmarker.detectForVideo(video, startTimeMs);
+              latestLandmarksRef.current = results.landmarks && results.landmarks.length > 0
+                ? results.landmarks[0]
+                : null;
+            } catch (err) {
+              // Keep loop alive and continue drawing fallback placement.
+              latestLandmarksRef.current = null;
+              console.warn("Pose tracking frame failed", err);
+            }
+          }
 
+          const landmarks = latestLandmarksRef.current;
+          if (landmarks && activeImage) {
+            const nose = landmarks[0];
+            const leftShoulder = landmarks[11];
+            const rightShoulder = landmarks[12];
+
+            if (nose && leftShoulder && rightShoulder) {
               const nY = nose.y * canvas.height;
               const lsX = leftShoulder.x * canvas.width;
               const lsY = leftShoulder.y * canvas.height;
@@ -295,8 +263,14 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
               const drawX = midX - necklaceW / 2;
               const drawY = neckY - necklaceH / 6;
 
-              ctx.drawImage(activeImage, drawX, drawY, necklaceW, necklaceH);
-              drewTracked = true;
+              if (Number.isFinite(drawX) && Number.isFinite(drawY) && necklaceW > 0 && necklaceH > 0) {
+                ctx.drawImage(activeImage, drawX, drawY, necklaceW, necklaceH);
+                drewTracked = true;
+                if (!drewOverlayRef.current) {
+                  drewOverlayRef.current = true;
+                  setHasDrawnOverlay(true);
+                }
+              }
             }
           }
 
@@ -308,6 +282,10 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
             const drawX = (canvas.width - fallbackW) / 2;
             const drawY = (canvas.height - fallbackH) / 2;
             ctx.drawImage(activeImage, drawX, drawY, fallbackW, fallbackH);
+            if (!drewOverlayRef.current) {
+              drewOverlayRef.current = true;
+              setHasDrawnOverlay(true);
+            }
           }
         }
       }
@@ -376,7 +354,8 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
             position: "absolute",
             width: "640px",
             height: "480px",
-            transform: "scaleX(-1)"
+            transform: "scaleX(-1)",
+            zIndex: 1
           }}
         />
         <canvas
@@ -385,9 +364,29 @@ export default function NecklaceTryOn({ selectedImageSrc }: NecklaceTryOnProps) 
             position: "absolute",
             width: "640px",
             height: "480px",
-            transform: "scaleX(-1)"
+            transform: "scaleX(-1)",
+            zIndex: 2
           }}
         />
+
+        {selectedImageSrc && !hasDrawnOverlay && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={selectedImageSrc}
+            alt="Try-on fallback overlay"
+            style={{
+              position: "absolute",
+              width: "34%",
+              height: "auto",
+              left: "50%",
+              top: "50%",
+              transform: "translate(-50%, -50%) scaleX(-1)",
+              zIndex: 3,
+              pointerEvents: "none",
+              opacity: 0.95
+            }}
+          />
+        )}
       </div>
       {!isActive && <p style={{ fontSize: "14px", color: "#888" }}>{statusText}</p>}
     </div>
