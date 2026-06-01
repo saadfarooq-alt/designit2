@@ -119,6 +119,10 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         return resolve(null);
       }
 
+      const targetShapeId = selectedShapeId || [...workspaceShapes]
+        .reverse()
+        .find(s => !s.isMannequin && !!s.img)?.id || null;
+
       try {
         console.log("💾 [TRY-ON PIPELINE] Initializing comprehensive design texture parsing environment...");
 
@@ -126,7 +130,29 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         const rect = svgEl.getBoundingClientRect();
         const width = rect.width || svgEl.clientWidth || 800;
         const height = rect.height || svgEl.clientHeight || 600;
-        const viewBox = svgEl.getAttribute("viewBox") || `0 0 ${width} ${height}`;
+        let exportX = 0;
+        let exportY = 0;
+        let exportWidth = width;
+        let exportHeight = height;
+
+        // Crop export to selected/active image bounds instead of full canvas.
+        if (targetShapeId) {
+          const targetEl = svgEl.querySelector(`[data-shape-id="${targetShapeId}"]`) as SVGGraphicsElement | null;
+          if (targetEl) {
+            const r = targetEl.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              const padding = 8;
+              const x = r.left - rect.left;
+              const y = r.top - rect.top;
+              exportX = Math.max(0, x - padding);
+              exportY = Math.max(0, y - padding);
+              exportWidth = Math.max(1, Math.min(width - exportX, r.width + padding * 2));
+              exportHeight = Math.max(1, Math.min(height - exportY, r.height + padding * 2));
+            }
+          }
+        }
+
+        const viewBox = `${exportX} ${exportY} ${exportWidth} ${exportHeight}`;
 
         // 2. Clone the active workspace layout tree
         const clonedSvg = svgEl.cloneNode(true) as SVGElement;
@@ -193,6 +219,13 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         const promises: Promise<void>[] = [];
 
         imageElements.forEach((img) => {
+          // Keep only the selected/active shape image in Try-On payload.
+          const imageShapeId = img.getAttribute("data-shape-id") || "";
+          if (targetShapeId && imageShapeId && imageShapeId !== targetShapeId) {
+            img.remove();
+            return;
+          }
+
           const href = img.getAttribute("href") || (img as HTMLImageElement).src;
           if (href && !href.startsWith("data:")) {
             const p = new Promise<void>((resolveImg) => {
@@ -223,13 +256,13 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
         // 7. COMPILING FLATTENED RENDER snapshot
         Promise.all(promises).then(() => {
-          clonedSvg.setAttribute("width", width.toString());
-          clonedSvg.setAttribute("height", height.toString());
+          clonedSvg.setAttribute("width", exportWidth.toString());
+          clonedSvg.setAttribute("height", exportHeight.toString());
           clonedSvg.setAttribute("viewBox", viewBox);
           
           clonedSvg.removeAttribute("class");
-          clonedSvg.style.width = `${width}px`;
-          clonedSvg.style.height = `${height}px`;
+          clonedSvg.style.width = `${exportWidth}px`;
+          clonedSvg.style.height = `${exportHeight}px`;
           clonedSvg.style.transform = "none";
 
           const serializer = new XMLSerializer();
@@ -239,8 +272,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           }
 
           const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
+          canvas.width = exportWidth;
+          canvas.height = exportHeight;
           const ctx = canvas.getContext("2d");
 
           if (!ctx) {
@@ -252,8 +285,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           finalImg.crossOrigin = "anonymous";
           
           finalImg.onload = () => {
-            ctx.clearRect(0, 0, width, height);
-            ctx.drawImage(finalImg, 0, 0, width, height);
+            ctx.clearRect(0, 0, exportWidth, exportHeight);
+            ctx.drawImage(finalImg, 0, 0, exportWidth, exportHeight);
 
             const dataUrlOutput = canvas.toDataURL("image/png");
             setRenderedWorkspaceImg(dataUrlOutput);
@@ -3691,10 +3724,10 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     <h3 className="text-sm font-bold text-slate-700 mb-2 uppercase tracking-wide">
       Live Device Try-On Pipeline
     </h3>
-    {(renderedWorkspaceImg || selectedShape?.img || selectedImage) ? (
+    {renderedWorkspaceImg ? (
       <NecklaceTryOn
-        key={(renderedWorkspaceImg || selectedShape?.img || selectedImage || '').slice(0, 64)}
-        selectedImageSrc={renderedWorkspaceImg || selectedShape?.img || selectedImage}
+        key={renderedWorkspaceImg.slice(0, 64)}
+        selectedImageSrc={renderedWorkspaceImg}
       />
     ) : (
       <div className="text-xs text-slate-500 py-6">Preparing modified PNG for try-on...</div>
@@ -4164,12 +4197,19 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     if (!showTryOn) {
       console.log("🎒 [STUDIO] Preparing image-only asset for try-on...");
 
-      // Send just the selected/active image, not the whole workspace canvas.
-      let readyAsset = selectedShape?.img || selectedImage || null;
-      if (!readyAsset) readyAsset = await getDesignImage();
+      // Always prefer a rendered snapshot of current edits (not the raw source image URL).
+      let readyAsset = await syncWorkspaceToTryOn();
+      if (!readyAsset) {
+        readyAsset = await getDesignImage();
+      }
+
+      // Last-resort fallback only if it's clearly a non-original modified image.
+      if (!readyAsset && selectedShape?.img && (!selectedImage || selectedShape.img !== selectedImage)) {
+        readyAsset = selectedShape.img;
+      }
       
       if (!readyAsset) {
-        alert("No image available for try-on. Select or add an image first.");
+        alert("No modified image available for try-on. Edit/select an image first.");
         return;
       }
 
