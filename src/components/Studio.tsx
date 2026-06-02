@@ -940,7 +940,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
         ctx.putImageData(outData, 0, 0);
 
         await new Promise(r => setTimeout(r, 400));
-        const resultUrl = canvas.toDataURL('image/png');
+        const resultUrl = await applyDrapeEffect(canvas);
 
         saveForUndo();
 
@@ -3855,4 +3855,54 @@ export function Studio({ onBack }: { onBack: () => void }) {
       </div>
   );
 }
-
+const applyDrapeEffect = (sourceCanvas: HTMLCanvasElement): Promise<string> => {
+  return new Promise((resolve) => {
+    const COLS = 20, ROWS = 14;
+    const dW = sourceCanvas.width;
+    const dH = sourceCanvas.height;
+    const MAX_SAG = dH * 0.025;
+    const MAX_PINCH = dW * 0.008;
+    const pts: { x: number; y: number; u: number; v: number }[] = [];
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const u = c / (COLS - 1);
+        const v = r / (ROWS - 1);
+        const edgeFactor = Math.sin(u * Math.PI);
+        const rowFactor = v * v;
+        pts.push({
+          x: u * dW + MAX_PINCH * (u - 0.5) * rowFactor * edgeFactor * -1,
+          y: v * dH + MAX_SAG * edgeFactor * rowFactor,
+          u, v
+        });
+      }
+    }
+    const out = document.createElement('canvas');
+    out.width = dW; out.height = dH;
+    const ctx = out.getContext('2d')!;
+    function drawTri(p0: any, p1: any, p2: any) {
+      const iw = dW, ih = dH;
+      const x0=p0.x,y0=p0.y,u0=p0.u*iw,v0=p0.v*ih;
+      const x1=p1.x,y1=p1.y,u1=p1.u*iw,v1=p1.v*ih;
+      const x2=p2.x,y2=p2.y,u2=p2.u*iw,v2=p2.v*ih;
+      ctx.save();
+      ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.lineTo(x2,y2);ctx.closePath();ctx.clip();
+      const det=(u1-u0)*(v2-v0)-(u2-u0)*(v1-v0);
+      if(Math.abs(det)<0.1){ctx.restore();return;}
+      const a=((x1-x0)*(v2-v0)-(x2-x0)*(v1-v0))/det;
+      const b=((x2-x0)*(u1-u0)-(x1-x0)*(u2-u0))/det;
+      const cc=x0-a*u0-b*v0;
+      const d=((y1-y0)*(v2-v0)-(y2-y0)*(v1-v0))/det;
+      const e=((y2-y0)*(u1-u0)-(y1-y0)*(u2-u0))/det;
+      const f=y0-d*u0-e*v0;
+      ctx.transform(a,d,b,e,cc,f);
+      ctx.drawImage(sourceCanvas,0,0);
+      ctx.restore();
+    }
+    for(let r=0;r<ROWS-1;r++) for(let c=0;c<COLS-1;c++){
+      const tl=pts[r*COLS+c],tr=pts[r*COLS+c+1];
+      const bl=pts[(r+1)*COLS+c],br=pts[(r+1)*COLS+c+1];
+      drawTri(tl,tr,bl);drawTri(tr,br,bl);
+    }
+    resolve(out.toDataURL('image/png'));
+  });
+};
