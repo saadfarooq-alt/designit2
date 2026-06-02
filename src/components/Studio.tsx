@@ -858,7 +858,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
         const gShoulder = getGarmentShoulderY(gData, gRender.canvas.width, gRender.canvas.height, "Garment");
 
         // 1) resize dress by bust/armpit width globally first (proper sizing)
-        const baseScale = (mSh.w > 0 && gSh.w > 0) ? mSh.w / gSh.w : 1;
+        const baseScale = (mSh.w > 0 && gSh.w > 0) ? (mSh.w / gSh.w) * 1.5 : 1;
         // Center calculated from actual left/right positions
         const mCenter = (mSh.left + mSh.right) / 2;
         const gCenter = (gSh.left + gSh.right) / 2;
@@ -880,7 +880,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
             // Calculate corresponding row in the garment - align garment top (shoulder) to mannequin shoulder, then shift up by 15% of garment height
             // Align garment shoulder (y=0) to mannequin shoulder (mShoulder.y)
-            const gy = Math.floor((y - mShoulder.y) / baseScale);
+            const gy = Math.floor((y - mShoulder.y + (mShoulder.y * 0.15)) / baseScale);
 
             if (gy >= 0 && gy < gRender.canvas.height) {
                 // Find garment bounds for this row
@@ -936,10 +936,9 @@ export function Studio({ onBack }: { onBack: () => void }) {
         if (mappedPixels === 0) {
            console.error("NO PIXELS WERE MAPPED!");
         }
+	ctx.putImageData(outData, 0, 0);
 
-        ctx.putImageData(outData, 0, 0);
-
-        await new Promise(r => setTimeout(r, 400));
+	await new Promise(r => setTimeout(r, 400));
         const resultUrl = await applyDrapeEffect(canvas);
 
         saveForUndo();
