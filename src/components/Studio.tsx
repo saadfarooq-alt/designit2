@@ -45,6 +45,7 @@ interface Dot { id: string; x: number; y: number; }
 interface DistortableShape {
   id: string;
   img: string;
+  fabricFillSrc?: string;
   dots: Dot[];
   dims: { width: number; height: number };
   position: { x: number; y: number };
@@ -2206,6 +2207,13 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     try {
       let normalizedFabric = 'selection-crop';
       let fabricSrc: string | null = null;
+      let copiedRect: { width: number; height: number } | null = null;
+      const targetShape = target?.type === 'shape'
+        ? workspaceShapes.find(shape => shape.id === target.id)
+        : (selectedShapeId ? workspaceShapes.find(shape => shape.id === selectedShapeId) : null);
+      const targetStroke = target?.type === 'stroke'
+        ? strokes.find(stroke => stroke.id === target.id)
+        : null;
 
       if (selectionRect && workspaceRef.current) {
         const rectX = Math.min(selectionRect.x1, selectionRect.x2);
@@ -2214,6 +2222,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
 
         if (rectW > 2 && rectH > 2) {
+          copiedRect = { width: rectW, height: rectH };
           const clone = workspaceRef.current.cloneNode(true) as SVGSVGElement;
           clone.querySelectorAll('circle[data-control-dot]').forEach(d => d.remove());
           clone.querySelectorAll('rect[stroke="#3b82f6"]').forEach(d => d.remove());
@@ -2284,16 +2293,19 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         }
       }
 
-      const targetShape = target?.type === 'shape'
-        ? workspaceShapes.find(shape => shape.id === target.id)
-        : (selectedShapeId ? workspaceShapes.find(shape => shape.id === selectedShapeId) : null);
-      const targetStroke = target?.type === 'stroke'
-        ? strokes.find(stroke => stroke.id === target.id)
-        : null;
-
       if (!fabricSrc && !targetShape && !targetStroke) {
         alert('Select an image/shape first for fabric debug.');
         return;
+      }
+
+      if (!fabricSrc) {
+        if (targetShape?.fabricFillSrc) {
+          normalizedFabric = targetShape.clothType ? normalizeFabric(targetShape.clothType) : 'shape-fabric';
+          fabricSrc = targetShape.fabricFillSrc;
+        } else if (targetShape?.img) {
+          normalizedFabric = targetShape.clothType ? normalizeFabric(targetShape.clothType) : 'shape-image';
+          fabricSrc = targetShape.img;
+        }
       }
 
       if (!fabricSrc) {
@@ -2317,21 +2329,55 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         console.warn('Fabric debug clipboard copy failed', clipboardError);
       }
 
-      const previewWin = window.open('', '_blank', 'width=460,height=560');
-      if (previewWin) {
-        previewWin.document.write(`
-          <html>
-            <head><title>Fabric Debug Preview</title></head>
-            <body style="margin:0;padding:14px;background:#0f172a;color:#e2e8f0;font-family:Arial,sans-serif;">
-              <div style="font-size:13px;margin-bottom:10px;">Fabric: ${normalizedFabric}</div>
-              <img src="${fabricSrc}" alt="Fabric Debug" style="max-width:100%;height:auto;border:1px solid #334155;border-radius:8px;background:#111827;" />
-            </body>
-          </html>
-        `);
-        previewWin.document.close();
+      let newW = Math.max(1, Math.round(copiedRect?.width || targetShape?.dims.width || 0));
+      let newH = Math.max(1, Math.round(copiedRect?.height || targetShape?.dims.height || 0));
+      if (!newW || !newH || newW === 1 || newH === 1) {
+        const sourceDims = await new Promise<{ width: number; height: number } | null>((resolve) => {
+          const img = new window.Image();
+          img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+          img.onerror = () => resolve(null);
+          img.src = fabricSrc!;
+        });
+        newW = Math.max(1, sourceDims?.width || 300);
+        newH = Math.max(1, sourceDims?.height || 300);
       }
 
-      alert(`Fabric debug copied to clipboard.\nType: ${normalizedFabric}\nImage preview opened.`);
+      const maxEdge = 320;
+      const initialScale = Math.min(1, maxEdge / Math.max(newW, newH));
+      const svgRect = workspaceRef.current?.getBoundingClientRect();
+      const centerX = (svgRect?.width ?? 1200) / 2;
+      const centerY = (svgRect?.height ?? 800) / 2;
+      const now = Date.now();
+      const newId = `s-${now}`;
+      const maxZ = Math.max(
+        ...workspaceShapes.map(s => s.zIndex || 0),
+        ...strokes.map(s => s.zIndex || 0),
+        0
+      );
+
+      const newShape: DistortableShape = {
+        id: newId,
+        img: fabricSrc,
+        dots: [
+          { id: `pt-${now}-1`, x: 0, y: 0 },
+          { id: `pt-${now}-2`, x: newW, y: 0 },
+          { id: `pt-${now}-3`, x: newW, y: newH },
+          { id: `pt-${now}-4`, x: 0, y: newH }
+        ],
+        dims: { width: newW, height: newH },
+        position: {
+          x: centerX - (newW * initialScale) / 2,
+          y: centerY - (newH * initialScale) / 2
+        },
+        scale: Math.max(0.1, initialScale),
+        showDots: true,
+        erasedPaths: [],
+        zIndex: maxZ + 1
+      };
+
+      saveForUndo();
+      setWorkspaceShapes(prev => [...prev, { ...newShape, clipUpdate: Date.now() } as DistortableShape]);
+      setSelectedShapeId(newId);
     } catch (error) {
       console.error('Fabric debug copy failed:', error);
       alert('Could not copy fabric debug payload. Check console.');
@@ -2339,88 +2385,184 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
     setSelectionRect(null);
     setContextMenu(null);
-  }, [selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor]);
+  }, [selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor, saveForUndo]);
 
+  
   const pasteFabricToSelection = useCallback(async (target?: { type: 'shape'; id: string }) => {
-    if (!fabricClipboardSrc) {
-      alert('Copy fabric first.');
-      return;
-    }
+  if (!fabricClipboardSrc) {
+    alert('Copy fabric first.');
+    return;
+  }
 
-    const targetShapes = target?.type === 'shape'
-      ? workspaceShapes.filter(shape => shape.id === target.id)
-      : selectionRect
-        ? workspaceShapes.filter(shape => {
-            const bbox = getBoundingBox(shape);
-            return isItemInRect(bbox, selectionRect);
-          })
-        : (selectedShapeId ? workspaceShapes.filter(shape => shape.id === selectedShapeId) : []);
+  const targetShapes = target?.type === 'shape'
+    ? workspaceShapes.filter(shape => shape.id === target.id)
+    : selectionRect
+      ? workspaceShapes.filter(shape => {
+          const bbox = getBoundingBox(shape);
+          return isItemInRect(bbox, selectionRect);
+        })
+      : (selectedShapeId ? workspaceShapes.filter(shape => shape.id === selectedShapeId) : []);
+
+  try {
+    const copiedFabricDims = await new Promise<{ width: number; height: number } | null>((resolve) => {
+      const img = new window.Image();
+      img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+      img.onerror = () => resolve(null);
+      img.src = fabricClipboardSrc;
+    });
 
     if (!targetShapes.length) {
-      alert('Select an image/shape first for Paste Fabric.');
+      const sourceW = Math.max(1, copiedFabricDims?.width || 400);
+      const sourceH = Math.max(1, copiedFabricDims?.height || 400);
+      const maxEdge = 320;
+      const initialScale = Math.min(1, maxEdge / Math.max(sourceW, sourceH));
+      const svgRect = workspaceRef.current?.getBoundingClientRect();
+      const centerX = (svgRect?.width ?? 1200) / 2;
+      const centerY = (svgRect?.height ?? 800) / 2;
+      const now = Date.now();
+      const newId = `s-${now}`;
+      const maxZ = Math.max(
+        ...workspaceShapes.map(s => s.zIndex || 0),
+        ...strokes.map(s => s.zIndex || 0),
+        0
+      );
+
+      const newShape: DistortableShape = {
+        id: newId,
+        img: fabricClipboardSrc,
+        fabricFillSrc: fabricClipboardSrc,
+        dots: [
+          { id: `pt-${now}-1`, x: 0, y: 0 },
+          { id: `pt-${now}-2`, x: sourceW, y: 0 },
+          { id: `pt-${now}-3`, x: sourceW, y: sourceH },
+          { id: `pt-${now}-4`, x: 0, y: sourceH }
+        ],
+        dims: { width: sourceW, height: sourceH },
+        position: {
+          x: centerX - (sourceW * initialScale) / 2,
+          y: centerY - (sourceH * initialScale) / 2
+        },
+        scale: Math.max(0.1, initialScale),
+        showDots: true,
+        erasedPaths: [],
+        zIndex: maxZ + 1
+      };
+
+      saveForUndo();
+      setWorkspaceShapes(prev => [...prev, { ...newShape, clipUpdate: Date.now() } as DistortableShape]);
+      setSelectedShapeId(newId);
+      setSelectionRect(null);
+      setContextMenu(null);
+      alert('Fabric pasted as new canvas shape. You can drag dots and use the orange resize handle.');
       return;
     }
 
-    const buildFilledFabric = (fabricSrc: string, width: number, height: number): Promise<string> => {
-      return new Promise((resolve, reject) => {
-        const img = new window.Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            canvas.width = Math.max(1, Math.round(width));
-            canvas.height = Math.max(1, Math.round(height));
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              reject(new Error('Canvas context unavailable'));
-              return;
-            }
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
+    saveForUndo();
+    const targetIds = new Set(targetShapes.map(shape => shape.id));
 
-            // Fill target bounds without stretching: keep aspect ratio and cover.
-            const scale = Math.max(canvas.width / img.width, canvas.height / img.height);
-            const drawWidth = img.width * scale;
-            const drawHeight = img.height * scale;
-            const drawX = (canvas.width - drawWidth) / 2;
-            const drawY = (canvas.height - drawHeight) / 2;
-            ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+    setWorkspaceShapes(prev => prev.map(shape => {
+      if (!targetIds.has(shape.id)) return shape;
+      return {
+        ...shape,
+        fabricFillSrc: fabricClipboardSrc,
+        baseFill: undefined,
+        fillColor: undefined,
+        clothType: undefined,
+        clipUpdate: Date.now(),
+        // Enforces minimum scale constraint during paste
+        scale: Math.max(0.1, shape.scale)
+      };
+    }));
 
-            resolve(canvas.toDataURL('image/png'));
-          } catch (err) {
-            reject(err);
-          }
-        };
-        img.onerror = (err) => reject(err);
-        img.src = fabricSrc;
-      });
-    };
+    const sourceW = copiedFabricDims?.width ?? 0;
+    const sourceH = copiedFabricDims?.height ?? 0;
+    const previewWin = window.open('', '_blank', 'width=720,height=640');
+    if (previewWin) {
+      const safeSrc = (fabricClipboardSrc || '').replace(/"/g, '&quot;');
+      const isSingleShape = targetShapes.length === 1;
 
-    try {
-      saveForUndo();
-      const updates = new Map<string, string>();
-      for (const shape of targetShapes) {
-        const filled = await buildFilledFabric(fabricClipboardSrc, shape.dims.width, shape.dims.height);
-        updates.set(shape.id, filled);
+      if (isSingleShape) {
+        const shape = targetShapes[0]!;
+      
+// Define a consistent preview scale (e.g., max 300px width)
+
+const displayW = Math.round(shape.dims.width * shape.scale);
+const displayH = Math.round(shape.dims.height * shape.scale);
+const baseW = Math.max(1, sourceW || displayW);
+const baseH = Math.max(1, sourceH || displayH);
+const fitScale = Math.max(displayW / baseW, displayH / baseH);
+const scaledW = Math.round(baseW * fitScale);
+const scaledH = Math.round(baseH * fitScale);
+const offsetX = Math.round((displayW - scaledW) / 2);
+const offsetY = Math.round((displayH - scaledH) / 2);
+
+previewWin.document.write(`
+  <html>
+    <body style="margin:0;padding:20px;background:#f1f5f9;font-family:sans-serif;">
+      <div style="background:#fff;padding:15px;border-radius:12px;display:inline-block;">
+        <h3 style="margin:0 0 10px 0;font-size:14px;">Pasted Fabric Bounds : ${displayW} x ${displayH}</h3>
+        <svg width="${displayW}" height="${displayH}" viewBox="0 0 ${displayW} ${displayH}" style="border:2px solid red;">
+          <rect width="${displayW}" height="${displayH}" fill="red" fill-opacity="0.2" stroke="red" stroke-width="2" />
+        </svg>
+        <div style="position:relative;width:${displayW}px;height:${displayH}px;overflow:hidden;border:2px solid #3b82f6;background:#eee;">
+          <img src="${safeSrc}" style="position:absolute;left:0;top:0;width:${baseW}px;height:${baseH}px;transform:translate(${offsetX}px, ${offsetY}px) scale(${fitScale});transform-origin:top left;display:block;" />
+        </div>
+      </div>
+    </body>
+  </html>
+`);
+        previewWin.document.close();
+        setSelectionRect(null);
+        setContextMenu(null);
+        return;
       }
 
-      setWorkspaceShapes(prev => prev.map(shape => {
-        const nextImg = updates.get(shape.id);
-        if (!nextImg) return shape;
-        return { ...shape, img: nextImg, clipUpdate: Date.now() };
-      }));
+      const cards = targetShapes.map(shape => {
+        const rectW = Math.max(1, Math.round(shape.dims.width));
+        const rectH = Math.max(1, Math.round(shape.dims.height));
+        const scale = Math.min(260 / rectW, 260 / rectH, 1);
+        const viewW = Math.max(40, Math.round(rectW * scale));
+        const viewH = Math.max(40, Math.round(rectH * scale));
+        const badge = sourceW > 0 && sourceH > 0
+          ? `<div style="font-size:11px;color:#64748b;margin-top:6px;">source ${sourceW} x ${sourceH}</div>`
+          : '';
 
-      alert(`Fabric pasted on ${updates.size} shape(s).`);
-    } catch (error) {
-      console.error('Paste fabric failed:', error);
-      alert('Could not paste fabric. Check console.');
+        return `
+          <div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;align-items:flex-start;">
+            <div style="font-size:11px;font-weight:700;color:#0f172a;">${shape.id}</div>
+            <div style="width:${viewW}px;height:${viewH}px;overflow:hidden;border-radius:10px;border:1px solid #cbd5e1;background:#f8fafc;display:flex;align-items:center;justify-content:center;">
+              <img src="${safeSrc}" alt="Pasted fabric preview" style="width:100%;height:100%;object-fit:cover;object-position:center;display:block;" />
+            </div>
+            ${badge}
+          </div>
+        `;
+      }).join('');
+
+      previewWin.document.write(`
+        <html>
+          <head><title>Pasted Fabric Preview</title></head>
+          <body style="margin:0;padding:14px;background:#f1f5f9;color:#0f172a;font-family:Arial,sans-serif;">
+            <div style="font-size:13px;font-weight:700;margin-bottom:10px;">Fabric pasted on ${targetIds.size} shape(s)</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;align-items:start;">
+              ${cards}
+            </div>
+          </body>
+        </html>
+      `);
+      previewWin.document.close();
+    } else {
+      alert(`Fabric pasted on ${targetIds.size} shape(s).`);
     }
+  } catch (error) {
+    console.error('Paste fabric failed:', error);
+    alert('Could not paste fabric. Check console.');
+  }
 
-    setSelectionRect(null);
-    setContextMenu(null);
-  }, [fabricClipboardSrc, workspaceShapes, selectionRect, selectedShapeId, getBoundingBox, isItemInRect, saveForUndo]);
-
-  const extractSelection = useCallback(async (asJpeg = false) => {
+  setSelectionRect(null);
+  setContextMenu(null);
+}, [fabricClipboardSrc, workspaceShapes, strokes, selectionRect, selectedShapeId, getBoundingBox, isItemInRect, saveForUndo]);
+  
+const extractSelection = useCallback(async (asJpeg = false) => {
     if (!selectionRect) return;
     try {
       const rectX = Math.min(selectionRect.x1, selectionRect.x2);
@@ -4039,6 +4181,12 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                 .map((item, idx) => {
                   if (item.type === 'shape') {
                     const shape = item as DistortableShape;
+                    // Match pasted fabric to the same local rectangle as the shape image.
+                    // The group scale/rotation (orange handle logic) is applied uniformly to both.
+                    const fabricX = 0;
+                    const fabricY = 0;
+                    const fabricWidth = shape.dims.width;
+                    const fabricHeight = shape.dims.height;
                     const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
                     return (
                       <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
@@ -4078,7 +4226,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                               if (pickColorMode) { e.stopPropagation();
                               const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                               if (activeTool === "fill") { e.stopPropagation();
-                              saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
+                              saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, fabricFillSrc: undefined, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
                               return; }
                               if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
                               const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
@@ -4086,6 +4234,20 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                             }} onContextMenu={(e) => { e.preventDefault();
                               e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
                             }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                            {shape.fabricFillSrc && (
+                              <image
+                                key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
+                                href={shape.fabricFillSrc}
+                                x={fabricX}
+                                y={fabricY}
+                                width={fabricWidth}
+                                height={fabricHeight}
+                                preserveAspectRatio="xMidYMid slice"
+                                clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined}
+                                mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined}
+                                pointerEvents="none"
+                              />
+                            )}
                             {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
                             {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ?
                             (
