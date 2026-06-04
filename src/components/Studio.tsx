@@ -129,6 +129,38 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         .reverse()
         .find(s => !s.isMannequin && !!s.img)?.id || null;
 
+      const selectedShapeForTryOn = selectedShapeId
+        ? workspaceShapes.find(s => s.id === selectedShapeId) || null
+        : null;
+
+      const selectedGroupIds = new Set<string>();
+      if (selectedShapeForTryOn?.groupId) {
+        selectedGroupIds.add(selectedShapeForTryOn.groupId);
+      }
+
+      if (selectionRect) {
+        workspaceShapes.forEach((shape) => {
+          const bbox = getBoundingBox(shape);
+          if (isItemInRect(bbox, selectionRect) && shape.groupId) {
+            selectedGroupIds.add(shape.groupId);
+          }
+        });
+        strokes.forEach((stroke) => {
+          const bbox = getBoundingBox(stroke);
+          if (isItemInRect(bbox, selectionRect) && stroke.groupId) {
+            selectedGroupIds.add(stroke.groupId);
+          }
+        });
+      }
+
+      const targetShapeIds = selectedGroupIds.size > 0
+        ? new Set(
+            workspaceShapes
+              .filter(shape => !!shape.groupId && selectedGroupIds.has(shape.groupId))
+              .map(shape => shape.id)
+          )
+        : new Set(targetShapeId ? [targetShapeId] : []);
+
       try {
         console.log("💾 [TRY-ON PIPELINE] Initializing comprehensive design texture parsing environment...");
 
@@ -142,19 +174,29 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         let exportHeight = height;
 
         // Crop export to selected/active image bounds instead of full canvas.
-        if (targetShapeId) {
-          const targetEl = svgEl.querySelector(`[data-shape-id="${targetShapeId}"]`) as SVGGraphicsElement | null;
-          if (targetEl) {
-            const r = targetEl.getBoundingClientRect();
-            if (r.width > 0 && r.height > 0) {
-              const padding = 8;
-              const x = r.left - rect.left;
-              const y = r.top - rect.top;
-              exportX = Math.max(0, x - padding);
-              exportY = Math.max(0, y - padding);
-              exportWidth = Math.max(1, Math.min(width - exportX, r.width + padding * 2));
-              exportHeight = Math.max(1, Math.min(height - exportY, r.height + padding * 2));
-            }
+        if (targetShapeIds.size > 0) {
+          const targetRects = Array.from(targetShapeIds)
+            .map((id) => svgEl.querySelector(`[data-shape-id="${id}"]`) as SVGGraphicsElement | null)
+            .filter((el): el is SVGGraphicsElement => !!el)
+            .map((el) => el.getBoundingClientRect())
+            .filter((r) => r.width > 0 && r.height > 0);
+
+          if (targetRects.length > 0) {
+            const left = Math.min(...targetRects.map(r => r.left));
+            const top = Math.min(...targetRects.map(r => r.top));
+            const right = Math.max(...targetRects.map(r => r.right));
+            const bottom = Math.max(...targetRects.map(r => r.bottom));
+
+            const padding = 8;
+            const x = left - rect.left;
+            const y = top - rect.top;
+            const w = right - left;
+            const h = bottom - top;
+
+            exportX = Math.max(0, x - padding);
+            exportY = Math.max(0, y - padding);
+            exportWidth = Math.max(1, Math.min(width - exportX, w + padding * 2));
+            exportHeight = Math.max(1, Math.min(height - exportY, h + padding * 2));
           }
         }
 
@@ -220,29 +262,26 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           }
         });
 
-        // 5b. Keep only the selected/active shape branch for Try-On export.
-        if (targetShapeId) {
-          const targetImage = clonedSvg.querySelector(`[data-shape-id="${targetShapeId}"]`);
-          const targetGroup = targetImage?.closest("g") || null;
+        // 5b. Keep only selected target branch(es) for Try-On export.
+        if (targetShapeIds.size > 0 || selectedGroupIds.size > 0) {
+          Array.from(clonedSvg.children).forEach((child) => {
+            const tag = child.tagName.toLowerCase();
+            if (tag === 'defs') return;
 
-          clonedSvg.querySelectorAll('[data-shape-id]').forEach((el) => {
-            const shapeId = el.getAttribute('data-shape-id') || '';
-            if (shapeId !== targetShapeId) {
-              const groupToRemove = el.closest('g');
-              if (groupToRemove && groupToRemove !== targetGroup) {
-                groupToRemove.remove();
-              }
+            if (tag !== 'g') {
+              child.remove();
+              return;
+            }
+
+            const childShapeId = child.getAttribute('data-shape-id') || '';
+            const childGroupId = child.getAttribute('data-group-id') || '';
+            const keepByShape = childShapeId ? targetShapeIds.has(childShapeId) : false;
+            const keepByGroup = childGroupId ? selectedGroupIds.has(childGroupId) : false;
+
+            if (!keepByShape && !keepByGroup) {
+              child.remove();
             }
           });
-
-          if (targetGroup) {
-            Array.from(clonedSvg.children).forEach((child) => {
-              const tag = child.tagName.toLowerCase();
-              if (tag === 'defs') return;
-              if (child === targetGroup || child.contains(targetGroup)) return;
-              child.remove();
-            });
-          }
         }
 
         // 6. ASYNCHRONOUS INLINE ASSET CONVERSION PIPELINE FOR MODIFIED TEXTURES
@@ -250,9 +289,9 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
         const promises: Promise<void>[] = [];
 
         imageElements.forEach((img) => {
-          // Keep only the selected/active shape image in Try-On payload.
+          // Keep only selected target shape images in Try-On payload.
           const imageShapeId = img.getAttribute("data-shape-id") || "";
-          if (targetShapeId && imageShapeId && imageShapeId !== targetShapeId) {
+          if (targetShapeIds.size > 0 && imageShapeId && !targetShapeIds.has(imageShapeId)) {
             img.remove();
             return;
           }
@@ -4041,7 +4080,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     const fabricHeight = shape.dims.height;
                     const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
                     return (
-                      <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
+                      <g key={shape.id} data-shape-id={shape.id} data-group-id={shape.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
                         {shape.isMannequin ? (
                           <>
                             <defs>
@@ -4157,7 +4196,7 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                     const strokeH = Math.max(1, maxY - minY);
                     const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
                     return (
-                    <g key={s.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
+                    <g key={s.id} data-stroke-id={s.id} data-group-id={s.groupId || ''} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
                       {s.baseFill && <path d={strokePathD} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
                       {s.fabricFillSrc && (
                         <>
