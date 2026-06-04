@@ -880,7 +880,7 @@ export function Studio({ onBack }: { onBack: () => void }) {
 
             // Calculate corresponding row in the garment - align garment top (shoulder) to mannequin shoulder, then shift up by 15% of garment height
             // Align garment shoulder (y=0) to mannequin shoulder (mShoulder.y)
-            const gy = Math.floor((y - mShoulder.y + (mShoulder.y * 0.15)) / baseScale);
+            const gy = Math.floor((y - mShoulder.y + (mShoulder.y * 0.35)) / baseScale);
 
             if (gy >= 0 && gy < gRender.canvas.height) {
                 // Find garment bounds for this row
