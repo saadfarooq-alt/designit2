@@ -2324,64 +2324,6 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
           generateTextureDataUrl(activeColor, normalizedFabric, 64);
       }
 
-      const trimTransparentPadding = async (src: string): Promise<string> => {
-        try {
-          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const el = new window.Image();
-            el.crossOrigin = 'anonymous';
-            el.onload = () => resolve(el);
-            el.onerror = reject;
-            el.src = src;
-          });
-
-          const w = Math.max(1, img.naturalWidth || img.width);
-          const h = Math.max(1, img.naturalHeight || img.height);
-          const c = document.createElement('canvas');
-          c.width = w;
-          c.height = h;
-          const ctx = c.getContext('2d');
-          if (!ctx) return src;
-          ctx.drawImage(img, 0, 0, w, h);
-
-          const data = ctx.getImageData(0, 0, w, h).data;
-          let minX = w;
-          let minY = h;
-          let maxX = -1;
-          let maxY = -1;
-
-          for (let y = 0; y < h; y++) {
-            for (let x = 0; x < w; x++) {
-              const alpha = data[(y * w + x) * 4 + 3];
-              if (alpha > 8) {
-                if (x < minX) minX = x;
-                if (y < minY) minY = y;
-                if (x > maxX) maxX = x;
-                if (y > maxY) maxY = y;
-              }
-            }
-          }
-
-          if (maxX < minX || maxY < minY) return src;
-          const cropW = Math.max(1, maxX - minX + 1);
-          const cropH = Math.max(1, maxY - minY + 1);
-
-          // Skip tiny/no-op crops to avoid unnecessary re-encoding.
-          if (cropW >= w - 2 && cropH >= h - 2) return src;
-
-          const out = document.createElement('canvas');
-          out.width = cropW;
-          out.height = cropH;
-          const outCtx = out.getContext('2d');
-          if (!outCtx) return src;
-          outCtx.drawImage(c, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
-          return out.toDataURL('image/png');
-        } catch {
-          return src;
-        }
-      };
-
-      fabricSrc = await trimTransparentPadding(fabricSrc);
-
       setFabricClipboardSrc(fabricSrc);
 
       try {
@@ -2404,23 +2346,13 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     return;
   }
 
-  const targetShapes = target?.type === 'shape'
-    ? workspaceShapes.filter(shape => shape.id === target.id)
-    : selectionRect
-      ? workspaceShapes.filter(shape => {
-          const bbox = getBoundingBox(shape);
-          return isItemInRect(bbox, selectionRect);
-        })
-      : (selectedShapeId ? workspaceShapes.filter(shape => shape.id === selectedShapeId) : []);
+  const targetShapes = target
+    ? (target.type === 'shape' ? workspaceShapes.filter(shape => shape.id === target.id) : [])
+    : (selectedShapeId ? workspaceShapes.filter(shape => shape.id === selectedShapeId) : []);
 
-  const targetStrokes = target?.type === 'stroke'
-    ? strokes.filter(stroke => stroke.id === target.id)
-    : selectionRect
-      ? strokes.filter(stroke => {
-          const bbox = getBoundingBox(stroke);
-          return isItemInRect(bbox, selectionRect);
-        })
-      : [];
+  const targetStrokes = target
+    ? (target.type === 'stroke' ? strokes.filter(stroke => stroke.id === target.id) : [])
+    : [];
 
   try {
     const copiedFabricDims = await new Promise<{ width: number; height: number } | null>((resolve) => {
@@ -2477,7 +2409,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
 
   setSelectionRect(null);
   setContextMenu(null);
-}, [fabricClipboardSrc, workspaceShapes, strokes, selectionRect, selectedShapeId, getBoundingBox, isItemInRect, saveForUndo]);
+}, [fabricClipboardSrc, workspaceShapes, strokes, selectedShapeId, saveForUndo]);
   
 const extractSelection = useCallback(async (asJpeg = false) => {
     if (!selectionRect) return;
