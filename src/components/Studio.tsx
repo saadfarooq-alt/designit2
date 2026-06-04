@@ -45,6 +45,9 @@ interface Dot { id: string; x: number; y: number; }
 interface DistortableShape {
   id: string;
   img: string;
+  fabricFillSrc?: string;
+  fabricFillWidth?: number;
+  fabricFillHeight?: number;
   dots: Dot[];
   dims: { width: number; height: number };
   position: { x: number; y: number };
@@ -68,6 +71,9 @@ interface Stroke {
   points: { id: string; x: number; y: number }[]; 
   color: string; 
   width: number; 
+  fabricFillSrc?: string;
+  fabricFillWidth?: number;
+  fabricFillHeight?: number;
   rotation?: number;
   fillColor?: string;
   clothType?: string;
@@ -777,6 +783,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
   const [rotatingId, setRotatingId] = useState<string | null>(null);
   const [selectionRect, setSelectionRect] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
   const [clipboard, setClipboard] = useState<{ shapes: DistortableShape[]; strokes: Stroke[] } | null>(null);
+  const [fabricClipboardSrc, setFabricClipboardSrc] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [customAssets, setCustomAssets] = useState<{name: string, path: string}[]>([]);
@@ -2201,7 +2208,210 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
     setContextMenu(null);
   }, [selectionRect, workspaceShapes, strokes, getBoundingBox, isItemInRect]);
 
-  const extractSelection = useCallback(async (asJpeg = false) => {
+  const copyFabricDebugFromSelection = useCallback(async (target?: { type: 'shape' | 'stroke' | 'selection'; id: string }) => {
+    try {
+      let normalizedFabric = 'selection-crop';
+      let fabricSrc: string | null = null;
+      const targetShape = target?.type === 'shape'
+        ? workspaceShapes.find(shape => shape.id === target.id)
+        : (selectedShapeId ? workspaceShapes.find(shape => shape.id === selectedShapeId) : null);
+      const targetStroke = target?.type === 'stroke'
+        ? strokes.find(stroke => stroke.id === target.id)
+        : null;
+
+      if (selectionRect && workspaceRef.current) {
+        const rectX = Math.min(selectionRect.x1, selectionRect.x2);
+        const rectY = Math.min(selectionRect.y1, selectionRect.y2);
+        const rectW = Math.abs(selectionRect.x2 - selectionRect.x1);
+        const rectH = Math.abs(selectionRect.y2 - selectionRect.y1);
+
+        if (rectW > 2 && rectH > 2) {
+          const clone = workspaceRef.current.cloneNode(true) as SVGSVGElement;
+          clone.querySelectorAll('circle[data-control-dot]').forEach(d => d.remove());
+          clone.querySelectorAll('rect[stroke="#3b82f6"]').forEach(d => d.remove());
+          clone.setAttribute('viewBox', `${rectX} ${rectY} ${rectW} ${rectH}`);
+          clone.setAttribute('width', `${rectW}`);
+          clone.setAttribute('height', `${rectH}`);
+
+          const images = Array.from(clone.querySelectorAll('image')) as SVGImageElement[];
+          for (const imgEl of images) {
+            const href = imgEl.getAttribute('href') || imgEl.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || '';
+            if (!href || href.startsWith('data:')) continue;
+            try {
+              const res = await fetch(href, { mode: 'cors' });
+              const blob = await res.blob();
+              const reader = new FileReader();
+              const dataUrl: string = await new Promise((resolve, reject) => {
+                reader.onload = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              imgEl.setAttribute('href', dataUrl);
+            } catch (e) {
+              console.warn('[copyFabricDebugFromSelection] image inline failed', href, e);
+            }
+          }
+
+          try {
+            clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+            clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+          } catch (e) {}
+
+          const serializer = new XMLSerializer();
+          let source = serializer.serializeToString(clone);
+          if (!source.match(/^<\?xml/)) source = '<?xml version="1.0" standalone="no"?>\n' + source;
+
+          const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(svgBlob);
+          const img = new window.Image();
+          img.crossOrigin = 'anonymous';
+          const croppedDataUrl: string = await new Promise((resolve, reject) => {
+            img.onload = () => {
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = rectW;
+                canvas.height = rectH;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                  reject(new Error('Canvas context unavailable'));
+                  URL.revokeObjectURL(url);
+                  return;
+                }
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                URL.revokeObjectURL(url);
+                resolve(canvas.toDataURL('image/png'));
+              } catch (drawErr) {
+                URL.revokeObjectURL(url);
+                reject(drawErr);
+              }
+            };
+            img.onerror = (err) => {
+              URL.revokeObjectURL(url);
+              reject(err);
+            };
+            img.src = url;
+          });
+
+          fabricSrc = croppedDataUrl;
+        }
+      }
+
+      if (!fabricSrc && !targetShape && !targetStroke) {
+        alert('Select an image/shape first for fabric debug.');
+        return;
+      }
+
+      if (!fabricSrc) {
+        if (targetShape?.fabricFillSrc) {
+          normalizedFabric = targetShape.clothType ? normalizeFabric(targetShape.clothType) : 'shape-fabric';
+          fabricSrc = targetShape.fabricFillSrc;
+        } else if (targetShape?.img) {
+          normalizedFabric = targetShape.clothType ? normalizeFabric(targetShape.clothType) : 'shape-image';
+          fabricSrc = targetShape.img;
+        }
+      }
+
+      if (!fabricSrc) {
+        const sourceClothType =
+          targetShape?.clothType ||
+          targetStroke?.clothType ||
+          selectedClothType ||
+          'solid';
+
+        normalizedFabric = normalizeFabric(sourceClothType);
+        fabricSrc =
+          getFabricImagePath(sourceClothType) ||
+          generateTextureDataUrl(activeColor, normalizedFabric, 64);
+      }
+
+      setFabricClipboardSrc(fabricSrc);
+
+      try {
+        await navigator.clipboard.writeText(fabricSrc);
+      } catch (clipboardError) {
+        console.warn('Fabric debug clipboard copy failed', clipboardError);
+      }
+    } catch (error) {
+      console.error('Fabric debug copy failed:', error);
+      alert('Could not copy fabric debug payload. Check console.');
+    }
+
+    setSelectionRect(null);
+    setContextMenu(null);
+  }, [selectionRect, workspaceShapes, strokes, selectedShapeId, selectedClothType, activeColor]);
+
+  
+  const pasteFabricToSelection = useCallback(async (target?: { type: 'shape' | 'stroke'; id: string }) => {
+  if (!fabricClipboardSrc) {
+    return;
+  }
+
+  const targetShapes = target
+    ? (target.type === 'shape' ? workspaceShapes.filter(shape => shape.id === target.id) : [])
+    : (selectedShapeId ? workspaceShapes.filter(shape => shape.id === selectedShapeId) : []);
+
+  const targetStrokes = target
+    ? (target.type === 'stroke' ? strokes.filter(stroke => stroke.id === target.id) : [])
+    : [];
+
+  try {
+    const copiedFabricDims = await new Promise<{ width: number; height: number } | null>((resolve) => {
+      const img = new window.Image();
+      img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+      img.onerror = () => resolve(null);
+      img.src = fabricClipboardSrc;
+    });
+
+    if (!targetShapes.length && !targetStrokes.length) {
+      setSelectionRect(null);
+      setContextMenu(null);
+      return;
+    }
+
+    saveForUndo();
+    const targetIds = new Set(targetShapes.map(shape => shape.id));
+    const targetStrokeIds = new Set(targetStrokes.map(stroke => stroke.id));
+
+    setWorkspaceShapes(prev => prev.map(shape => {
+      if (!targetIds.has(shape.id)) return shape;
+      const nextFabricWidth = shape.fabricFillWidth ?? copiedFabricDims?.width;
+      const nextFabricHeight = shape.fabricFillHeight ?? copiedFabricDims?.height;
+      return {
+        ...shape,
+        fabricFillSrc: fabricClipboardSrc,
+        fabricFillWidth: nextFabricWidth,
+        fabricFillHeight: nextFabricHeight,
+        baseFill: undefined,
+        fillColor: undefined,
+        clothType: undefined,
+        clipUpdate: Date.now(),
+        // Enforces minimum scale constraint during paste
+        scale: Math.max(0.1, shape.scale)
+      };
+    }));
+
+    setStrokes(prev => prev.map(st => {
+      if (!targetStrokeIds.has(st.id)) return st;
+      return {
+        ...st,
+        fabricFillSrc: fabricClipboardSrc,
+        fabricFillWidth: undefined,
+        fabricFillHeight: undefined,
+        baseFill: undefined,
+        fillColor: undefined,
+        clothType: undefined
+      };
+    }));
+
+  } catch (error) {
+    console.error('Paste fabric failed:', error);
+  }
+
+  setSelectionRect(null);
+  setContextMenu(null);
+}, [fabricClipboardSrc, workspaceShapes, strokes, selectedShapeId, saveForUndo]);
+  
+const extractSelection = useCallback(async (asJpeg = false) => {
     if (!selectionRect) return;
     try {
       const rectX = Math.min(selectionRect.x1, selectionRect.x2);
@@ -2533,8 +2743,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       const localY = (y - s.position.y) / s.scale;
       if (localX > -50 && localX < s.dims.width + 50 && localY > -50 && localY < s.dims.height + 50) {
         const r = ERASE_RADIUS / Math.max(0.001, s.scale);
-        const hole = `M ${localX - r} ${localY} a ${r} ${r} 0 1 0 ${r * 2} 0 a ${r} ${r} 0 1 0 -${r * 2} 0`;
-        return { ...s, erasedPaths: [...(s.erasedPaths || []), hole], dots: s.dots.filter(d => Math.hypot(s.position.x + d.x * s.scale - x, s.position.y + d.y * s.scale - y) > ERASE_RADIUS) };
+        const d = `M ${localX - r} ${localY} A ${r} ${r} 0 1 0 ${localX + r} ${localY} A ${r} ${r} 0 1 0 ${localX - r} ${localY}`;
+        return { ...s, erasedPaths: [...(s.erasedPaths || []), d], clipUpdate: Date.now() };
       }
       return s;
     }));
@@ -3268,6 +3478,12 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                   <button onClick={copyFromSelection} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-[9px] font-black uppercase border-b border-slate-100 text-blue-600">
                     📋 Copy Area
                   </button>
+                  <button onClick={() => copyFabricDebugFromSelection()} className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600">
+                    🧪 Copy Fabric
+                  </button>
+                  <button onClick={() => pasteFabricToSelection()} className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700">
+                    🧵 Paste Fabric
+                  </button>
                   <button onClick={() => extractSelection(false)} className="w-full text-left px-4 py-2 hover:bg-green-50 text-[9px] font-black uppercase border-b border-slate-100 text-green-600">
                     ✂️ Extract Image
                   </button>
@@ -3308,6 +3524,25 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                   {contextMenu.type === "shape" && workspaceShapes.find(s => s.id === contextMenu.id)?.groupId && (
                     <button onClick={() => toggleGroupStrokes(contextMenu.id)} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-[9px] font-black uppercase border-b border-slate-100 text-slate-600">
                       👁️ Toggle Strokes
+                    </button>
+                  )}
+                  {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                    <button onClick={() => {
+                      if (contextMenu.type === "shape") {
+                        copyFabricDebugFromSelection({ type: "shape", id: contextMenu.id });
+                      } else if (contextMenu.type === "stroke") {
+                        copyFabricDebugFromSelection({ type: "stroke", id: contextMenu.id });
+                      }
+                    }} className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-[9px] font-black uppercase border-b border-slate-100 text-indigo-600">
+                      🧪 Copy Fabric
+                    </button>
+                  )}
+                  {(contextMenu.type === "shape" || contextMenu.type === "stroke") && (
+                    <button onClick={() => {
+                      const targetType: 'shape' | 'stroke' = contextMenu.type === 'stroke' ? 'stroke' : 'shape';
+                      pasteFabricToSelection({ type: targetType, id: contextMenu.id });
+                    }} className="w-full text-left px-4 py-2 hover:bg-cyan-50 text-[9px] font-black uppercase border-b border-slate-100 text-cyan-700">
+                      🧵 Paste Fabric
                     </button>
                   )}
                   <button onClick={() => { saveForUndo(); if (contextMenu.type === "shape") setWorkspaceShapes(prev => prev.filter(s => s.id !== contextMenu.id)); else if (contextMenu.type === "stroke") setStrokes(prev => prev.filter(s => s.id !== contextMenu.id)); setContextMenu(null); }} className="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 text-[9px] font-black uppercase">Delete Item</button>
@@ -3469,9 +3704,11 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
             // REST OF EXISTING LOGIC
             isPointerDownRef.current = true; 
             const c = getCoords(e); 
+            const pointerButton = (e.nativeEvent as PointerEvent).button;
+            const isPrimaryPointer = pointerButton === 0;
             
             // Start selection rectangle
-            if (activeTool === "cursor" && !isLocked && e.target === workspaceRef.current) {
+            if (activeTool === "cursor" && isPrimaryPointer) {
               setSelectionRect({ x1: c.x, y1: c.y, x2: c.x, y2: c.y });
             }
             
@@ -3790,26 +4027,18 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                 }
               }}
             >
-              {selectionRect && (
-                <rect 
-                  x={Math.min(selectionRect.x1, selectionRect.x2)}
-                  y={Math.min(selectionRect.y1, selectionRect.y2)}
-                  width={Math.abs(selectionRect.x2 - selectionRect.x1)}
-                  height={Math.abs(selectionRect.y2 - selectionRect.y1)}
-                  fill="rgba(59, 130, 246, 0.1)"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  strokeDasharray="5,5"
-                  style={{ cursor: 'context-menu' }}
-                />
-              )}
-
               {/* Render shapes and strokes together sorted by zIndex */}
               {[...workspaceShapes.map(s => ({ ...s, type: 'shape' as const })), ...strokes.map(s => ({ ...s, type: 'stroke' as const }))]
                 .sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0))
                 .map((item, idx) => {
                   if (item.type === 'shape') {
                     const shape = item as DistortableShape;
+                    // Match pasted fabric to the same local rectangle as the shape image.
+                    // The group scale/rotation (orange handle logic) is applied uniformly to both.
+                    const fabricX = 0;
+                    const fabricY = 0;
+                    const fabricWidth = shape.dims.width;
+                    const fabricHeight = shape.dims.height;
                     const transform = `translate(${shape.position.x} ${shape.position.y}) scale(${shape.scale}) rotate(${shape.rotation || 0} ${shape.dims.width/2} ${shape.dims.height/2})`;
                     return (
                       <g key={shape.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y }); }}>
@@ -3849,7 +4078,7 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                               if (pickColorMode) { e.stopPropagation();
                               const c = getCoords(e); handlePickRemove(shape, c.x, c.y); return; }
                               if (activeTool === "fill") { e.stopPropagation();
-                              saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
+                              saveForUndo(); setWorkspaceShapes(prev => prev.map(s => s.id === shape.id ? { ...s, fabricFillSrc: undefined, ...(keepOriginalColor ? {} : { baseFill: '#ffffff' }), fillColor: hexToRgba(activeColor, activeFillOpacity), clothType: normalizeFabric(selectedClothType) } : s));
                               return; }
                               if (activeTool === "cursor" && !isLocked) { e.stopPropagation();
                               const c = getCoords(e); setDraggingShapeId(shape.id); setDragOffset({ x: c.x - shape.position.x, y: c.y - shape.position.y });
@@ -3857,6 +4086,20 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                             }} onContextMenu={(e) => { e.preventDefault();
                               e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
                             }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
+                            {shape.fabricFillSrc && (
+                              <image
+                                key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
+                                href={shape.fabricFillSrc}
+                                x={fabricX}
+                                y={fabricY}
+                                width={fabricWidth}
+                                height={fabricHeight}
+                                preserveAspectRatio="xMidYMid slice"
+                                clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined}
+                                mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined}
+                                pointerEvents="none"
+                              />
+                            )}
                             {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
                             {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ?
                             (
@@ -3903,12 +4146,38 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                     const s = item as Stroke;
                     const allX = s.points.map(p => p.x);
                     const allY = s.points.map(p => p.y);
-                    const centerX = (Math.min(...allX) + Math.max(...allX)) / 2;
-                    const centerY = (Math.min(...allY) + Math.max(...allY)) / 2;
+                    const minX = Math.min(...allX);
+                    const maxX = Math.max(...allX);
+                    const minY = Math.min(...allY);
+                    const maxY = Math.max(...allY);
+                    const centerX = (minX + maxX) / 2;
+                    const centerY = (minY + maxY) / 2;
+                    const strokePathD = generatePathData(s.points, s.closed ?? false);
+                    const strokeW = Math.max(1, maxX - minX);
+                    const strokeH = Math.max(1, maxY - minY);
                     const transform = `rotate(${s.rotation || 0} ${centerX} ${centerY})`;
                     return (
                     <g key={s.id} transform={transform} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, id: s.id, type: "stroke" }); }}>
-                      {s.baseFill && <path d={generatePathData(s.points, s.closed ?? false)} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
+                      {s.baseFill && <path d={strokePathD} fill={s.baseFill} pointerEvents="none" strokeLinecap="round" strokeLinejoin="round" />}
+                      {s.fabricFillSrc && (
+                        <>
+                          <defs>
+                            <clipPath id={`cl-st-fabric-${s.id}`}>
+                              <path d={strokePathD} />
+                            </clipPath>
+                          </defs>
+                          <image
+                            href={s.fabricFillSrc}
+                            x={minX}
+                            y={minY}
+                            width={strokeW}
+                            height={strokeH}
+                            preserveAspectRatio="xMidYMid slice"
+                            clipPath={`url(#cl-st-fabric-${s.id})`}
+                            pointerEvents="none"
+                          />
+                        </>
+                      )}
                       {s.fillColor && s.clothType && s.clothType !== 'solid' ?
                       (
                         <>
@@ -4195,6 +4464,20 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
                     />
                   ))}
                 </g>
+              )}
+
+              {selectionRect && (
+                <rect 
+                  x={Math.min(selectionRect.x1, selectionRect.x2)}
+                  y={Math.min(selectionRect.y1, selectionRect.y2)}
+                  width={Math.abs(selectionRect.x2 - selectionRect.x1)}
+                  height={Math.abs(selectionRect.y2 - selectionRect.y1)}
+                  fill="rgba(59, 130, 246, 0.1)"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  strokeDasharray="5,5"
+                  pointerEvents="none"
+                />
               )}
               
             </svg>
