@@ -32,6 +32,8 @@ const FAQS = [
   },
 ];
 
+//check if these are alright FAQS
+
 const STEPS = [
   {
     num: "01",
