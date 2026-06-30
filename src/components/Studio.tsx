@@ -4125,18 +4125,33 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                               e.stopPropagation(); const c = getCoords(e); setContextMenu({ x: e.clientX, y: e.clientY, id: shape.id, type: "shape", clickX: c.x, clickY: c.y });
                             }} onClick={(e) => { e.stopPropagation(); setSelectedShapeId(shape.id); }} />
                             {shape.fabricFillSrc && (
-                              <image
-                                key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
-                                href={shape.fabricFillSrc}
-                                x={fabricX}
-                                y={fabricY}
-                                width={fabricWidth}
-                                height={fabricHeight}
-                                preserveAspectRatio="xMidYMid slice"
-                                clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined}
-                                mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined}
-                                pointerEvents="none"
-                              />
+                              <>
+                                <defs>
+                                  <pattern
+                                    id={`fabric-pt-${shape.id}`}
+                                    patternUnits="userSpaceOnUse"
+                                    width={shape.fabricFillWidth || fabricWidth}
+                                    height={shape.fabricFillHeight || fabricHeight}
+                                  >
+                                    <image
+                                      href={shape.fabricFillSrc}
+                                      x={0}
+                                      y={0}
+                                      width={shape.fabricFillWidth || fabricWidth}
+                                      height={shape.fabricFillHeight || fabricHeight}
+                                      preserveAspectRatio="none"
+                                    />
+                                  </pattern>
+                                </defs>
+                                <path
+                                  key={`fabric-${shape.id}-${(shape as any).clipUpdate || shape.dots.length}`}
+                                  d={generatePathData(shape.dots, true)}
+                                  fill={`url(#fabric-pt-${shape.id})`}
+                                  clipPath={shape.dots && shape.dots.length > 0 ? `url(#cl-${shape.id}-${(shape as any).clipUpdate || shape.dots.length})` : undefined}
+                                  mask={shape.erasedPaths && shape.erasedPaths.length > 0 ? `url(#ms-${shape.id})` : undefined}
+                                  pointerEvents="none"
+                                />
+                              </>
                             )}
                             {shape.baseFill && <path d={generatePathData(shape.dots, true)} fill={shape.baseFill} pointerEvents="none" />}
                             {shape.fillColor && shape.clothType && shape.clothType !== 'solid' ?
