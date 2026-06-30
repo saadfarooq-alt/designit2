@@ -2433,8 +2433,8 @@ const syncWorkspaceToTryOn = (): Promise<string | null> => {
       return {
         ...st,
         fabricFillSrc: fabricClipboardSrc,
-        fabricFillWidth: undefined,
-        fabricFillHeight: undefined,
+        fabricFillWidth: copiedFabricDims?.width,
+        fabricFillHeight: copiedFabricDims?.height,
         baseFill: undefined,
         fillColor: undefined,
         clothType: undefined
@@ -4218,14 +4218,25 @@ const extractSelection = useCallback(async (asJpeg = false) => {
                             <clipPath id={`cl-st-fabric-${s.id}`}>
                               <path d={strokePathD} />
                             </clipPath>
+                            <pattern
+                              id={`fabric-pt-stroke-${s.id}`}
+                              patternUnits="userSpaceOnUse"
+                              width={s.fabricFillWidth || strokeW}
+                              height={s.fabricFillHeight || strokeH}
+                            >
+                              <image
+                                href={s.fabricFillSrc}
+                                x={0}
+                                y={0}
+                                width={s.fabricFillWidth || strokeW}
+                                height={s.fabricFillHeight || strokeH}
+                                preserveAspectRatio="none"
+                              />
+                            </pattern>
                           </defs>
-                          <image
-                            href={s.fabricFillSrc}
-                            x={minX}
-                            y={minY}
-                            width={strokeW}
-                            height={strokeH}
-                            preserveAspectRatio="xMidYMid slice"
+                          <path
+                            d={strokePathD}
+                            fill={`url(#fabric-pt-stroke-${s.id})`}
                             clipPath={`url(#cl-st-fabric-${s.id})`}
                             pointerEvents="none"
                           />
